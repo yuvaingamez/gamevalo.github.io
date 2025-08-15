@@ -204,6 +204,10 @@
                 const firebaseConfig = JSON.parse(__firebase_config);
                 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
+                // Log values for debugging
+                console.log("Firebase config:", firebaseConfig);
+                console.log("Initial auth token:", initialAuthToken ? "exists" : "does not exist");
+
                 const app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
@@ -224,8 +228,11 @@
                             userIdEl.textContent = localPlayerId;
                             gameStatusEl.textContent = 'Ready to Join';
                             appIdEl.textContent = appId;
+                            console.log("Authenticated with user ID:", localPlayerId);
                             unsubscribe(); // Stop listening after the first state change
                             resolve();
+                        } else {
+                            console.log("Authentication state changed, but no user is signed in.");
                         }
                     });
                 });
