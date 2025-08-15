@@ -3,569 +3,891 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Valorant 2D</title>
+    <title>Valorant 2D: The Ascent</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase SDK Imports -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, query, where, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        
-        // Global variables provided by the canvas environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        import { getAuth, signInWithCustomToken, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, runTransaction, query, getDocs, updateDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- Firebase Initialization and Auth Logic ---
-        let db, auth, userId;
-        let unsubscribe = null;
-
-        const initFirebase = async () => {
-            try {
-                // --- IMPORTANT: PASTE YOUR FIREBASE CONFIGURATION HERE ---
-                // I have filled this in with the details you provided.
-                const firebaseConfig = {
-                    apiKey: "AIzaSyAkPgNjaa28cKgbwDAByg0RfSHvuSvC1d8",
-                    authDomain: "valo2d.firebaseapp.com",
-                    projectId: "valo2d",
-                    storageBucket: "valo2d.firebasestorage.app",
-                    messagingSenderId: "807697574241",
-                    appId: "1:807697574241:web:066e47b0e6652f55783d20",
-                    measurementId: "G-JN6KXYHLYK"
-                };
-                
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                // Check if the user is already authenticated
-                const authStatePromise = new Promise(resolve => {
-                    const unsubscribeAuth = auth.onAuthStateChanged(user => {
-                        if (user) {
-                            userId = user.uid;
-                        } else {
-                            userId = null;
-                        }
-                        unsubscribeAuth();
-                        resolve();
-                    });
-                });
-                await authStatePromise;
-
-                // Sign in with the provided token if available
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                    userId = auth.currentUser.uid;
-                } else if (!userId) {
-                    await signInAnonymously(auth);
-                    userId = auth.currentUser.uid;
-                }
-                
-                console.log("Firebase initialized. User ID:", userId);
-            } catch (error) {
-                console.error("Firebase initialization failed:", error);
-            }
-        };
-
-        // --- Game Setup ---
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const messageBox = document.getElementById('messageBox');
-        const singlePlayerButton = document.getElementById('singlePlayerButton');
-        const multiPlayerButton = document.getElementById('multiPlayerButton');
-        const gameContainer = document.getElementById('gameContainer');
-        const gameMenu = document.getElementById('gameMenu');
-        const playerNameInput = document.getElementById('playerName');
-
-        let players = {};
-        let bullets = [];
-        let singlePlayerMode = false;
-        let gameLoopId = null;
-        let playerState = {};
-        let isPlayerReady = false;
-        let isGameStarted = false;
-        let aiPlayer = null;
-        let gameId = null;
-
-        const playerSize = 20;
-        const playerSpeed = 3;
-        const bulletSpeed = 5;
-        const bulletRadius = 3;
-        const playerColor = '#4299e1'; // Tailwind blue-500
-        const enemyColor = '#f56565'; // Tailwind red-500
-        const bulletColor = '#fbd38d'; // Tailwind orange-200
-
-        let keys = {};
-        let mouse = { x: 0, y: 0, down: false };
-
-        // Helper function to show messages
-        function showMessage(message, color = 'bg-blue-500') {
-            messageBox.textContent = message;
-            messageBox.className = `p-2 rounded-lg text-white text-sm text-center transition-all duration-300 ${color}`;
-            messageBox.style.opacity = '1';
-            setTimeout(() => {
-                messageBox.style.opacity = '0';
-            }, 3000);
-        }
-
-        // --- Game Logic Functions ---
-        function resizeCanvas() {
-            canvas.width = gameContainer.clientWidth;
-            canvas.height = gameContainer.clientHeight;
-        }
-
-        function drawPlayer(player, color) {
-            ctx.fillStyle = color;
-            ctx.beginPath();
-            ctx.arc(player.x, player.y, playerSize, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = 'white';
-            ctx.font = '12px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(player.name, player.x, player.y + playerSize + 10);
-        }
-
-        function drawBullet(bullet) {
-            ctx.fillStyle = bulletColor;
-            ctx.beginPath();
-            ctx.arc(bullet.x, bullet.y, bulletRadius, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        function distance(p1, p2) {
-            return Math.hypot(p1.x - p2.x, p1.y - p2.y);
-        }
-
-        function isCollision(p1, p2) {
-            return distance(p1, p2) < playerSize;
-        }
-
-        function updateGameState() {
-            // Update player positions based on input
-            if (keys['w'] || keys['W']) playerState.y -= playerSpeed;
-            if (keys['s'] || keys['S']) playerState.y += playerSpeed;
-            if (keys['a'] || keys['A']) playerState.x -= playerSpeed;
-            if (keys['d'] || keys['D']) playerState.x += playerSpeed;
-
-            // Keep player within canvas bounds
-            playerState.x = Math.max(playerSize, Math.min(canvas.width - playerSize, playerState.x));
-            playerState.y = Math.max(playerSize, Math.min(canvas.height - playerSize, playerState.y));
-            
-            // AI logic for single-player mode
-            if (singlePlayerMode && aiPlayer) {
-                // Simple AI: move towards the player
-                const dx = playerState.x - aiPlayer.x;
-                const dy = playerState.y - aiPlayer.y;
-                const angle = Math.atan2(dy, dx);
-                aiPlayer.x += Math.cos(angle) * aiPlayer.speed;
-                aiPlayer.y += Math.sin(angle) * aiPlayer.speed;
-                
-                // Keep AI within bounds
-                aiPlayer.x = Math.max(playerSize, Math.min(canvas.width - playerSize, aiPlayer.x));
-                aiPlayer.y = Math.max(playerSize, Math.min(canvas.height - playerSize, aiPlayer.y));
-                
-                // Simple AI shooting
-                if (Math.random() < 0.01) { // 1% chance to shoot each frame
-                    const bullet = {
-                        x: aiPlayer.x,
-                        y: aiPlayer.y,
-                        vx: Math.cos(angle) * bulletSpeed,
-                        vy: Math.sin(angle) * bulletSpeed,
-                        ownerId: 'ai',
-                    };
-                    bullets.push(bullet);
-                }
-            }
-
-            // Update bullet positions and check for collisions
-            bullets = bullets.filter(bullet => {
-                bullet.x += bullet.vx;
-                bullet.y += bullet.vy;
-
-                // Remove bullets that are out of bounds
-                if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
-                    return false;
-                }
-
-                // Check for bullet-player collision
-                let hitPlayer = null;
-                if (singlePlayerMode) {
-                    if (bullet.ownerId !== 'player' && isCollision(bullet, playerState)) {
-                        hitPlayer = playerState;
-                    }
-                } else { // Multiplayer
-                    for (const playerId in players) {
-                        const player = players[playerId];
-                        if (bullet.ownerId !== playerId && isCollision(bullet, player)) {
-                            hitPlayer = player;
-                            break;
-                        }
-                    }
-                }
-
-                if (hitPlayer) {
-                    if (hitPlayer.id === userId) {
-                         // Only process hit for the local player
-                        console.log("Player hit! Removing bullet.");
-                        // This would be where you handle a 'hit' event in Firebase
-                        // For this example, we'll just show a message.
-                        showMessage("You were hit!", "bg-red-500");
-                        // In a real game, this would decrement health or trigger a death state.
-                    } else if (singlePlayerMode && bullet.ownerId === 'player' && isCollision(bullet, aiPlayer)) {
-                        showMessage("AI was hit!", "bg-green-500");
-                        // In a real game, this would decrement AI health.
-                    }
-                    return false; // Remove the bullet
-                }
-                
-                return true; // Keep the bullet
-            });
-        }
-
-        // --- Game Loop and Drawing ---
-        function gameLoop() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // Draw all players
-            if (singlePlayerMode) {
-                drawPlayer(playerState, playerColor);
-                if (aiPlayer) {
-                    drawPlayer(aiPlayer, enemyColor);
-                }
-            } else {
-                for (const playerId in players) {
-                    const player = players[playerId];
-                    const color = playerId === userId ? playerColor : enemyColor;
-                    drawPlayer(player, color);
-                }
-            }
-
-            // Draw all bullets
-            bullets.forEach(drawBullet);
-            
-            updateGameState();
-            
-            gameLoopId = requestAnimationFrame(gameLoop);
-        }
-
-        // --- Multiplayer Specific Functions ---
-        const savePlayerState = async () => {
-            if (!db || !userId || !gameId) {
-                console.error("Firebase not ready to save state.");
-                return;
-            }
-            const gameDocRef = doc(db, 'artifacts', appId, 'public/data/games', gameId);
-            const playerDocRef = doc(gameDocRef, 'players', userId);
-            try {
-                await setDoc(playerDocRef, playerState);
-            } catch (e) {
-                console.error("Error writing player state to Firestore:", e);
-            }
-        };
-
-        const listenForGameUpdates = () => {
-            if (unsubscribe) {
-                unsubscribe();
-            }
-
-            const gameRef = doc(db, 'artifacts', appId, 'public/data/games', gameId);
-            const playersRef = collection(gameRef, 'players');
-            unsubscribe = onSnapshot(playersRef, (snapshot) => {
-                snapshot.docChanges().forEach(change => {
-                    const player = change.doc.data();
-                    players[change.doc.id] = player;
-                    if (change.type === 'removed') {
-                        delete players[change.doc.id];
-                        showMessage(`${player.name} left the game.`, "bg-yellow-500");
-                    }
-                });
-
-                // Start the game loop once there's at least two players
-                if (Object.keys(players).length >= 2 && !isGameStarted) {
-                    isGameStarted = true;
-                    gameLoop();
-                    showMessage("Game started! Find and shoot your opponent.", "bg-green-500");
-                } else if (Object.keys(players).length < 2 && isGameStarted) {
-                    isGameStarted = false;
-                    cancelAnimationFrame(gameLoopId);
-                    showMessage("Waiting for another player...", "bg-red-500");
-                }
-            });
-        };
-        
-        // --- Player Controls and Event Listeners ---
-        window.addEventListener('keydown', (e) => {
-            keys[e.key] = true;
-        });
-
-        window.addEventListener('keyup', (e) => {
-            keys[e.key] = false;
-        });
-
-        canvas.addEventListener('mousemove', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            mouse.x = e.clientX - rect.left;
-            mouse.y = e.clientY - rect.top;
-        });
-
-        canvas.addEventListener('mousedown', (e) => {
-            if (isPlayerReady) {
-                mouse.down = true;
-                const angle = Math.atan2(mouse.y - playerState.y, mouse.x - playerState.x);
-                
-                const bullet = {
-                    x: playerState.x,
-                    y: playerState.y,
-                    vx: Math.cos(angle) * bulletSpeed,
-                    vy: Math.sin(angle) * bulletSpeed,
-                    ownerId: userId,
-                };
-                bullets.push(bullet);
-            }
-        });
-
-        canvas.addEventListener('mouseup', () => {
-            mouse.down = false;
-        });
-        
-        // Mobile-friendly touch controls
-        canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            const rect = canvas.getBoundingClientRect();
-            mouse.x = e.touches[0].clientX - rect.left;
-            mouse.y = e.touches[0].clientY - rect.top;
-            
-            const angle = Math.atan2(mouse.y - playerState.y, mouse.x - playerState.x);
-            const bullet = {
-                x: playerState.x,
-                y: playerState.y,
-                vx: Math.cos(angle) * bulletSpeed,
-                vy: Math.sin(angle) * bulletSpeed,
-                ownerId: userId,
-            };
-            bullets.push(bullet);
-        });
-
-        // --- Game Setup and Start ---
-        const startSinglePlayer = () => {
-            singlePlayerMode = true;
-            gameMenu.classList.add('hidden');
-            gameContainer.classList.remove('hidden');
-            resizeCanvas();
-
-            const playerName = playerNameInput.value || `Player_${Math.random().toString(36).substr(2, 5)}`;
-            playerState = {
-                name: playerName,
-                x: canvas.width / 4,
-                y: canvas.height / 2,
-                id: 'player',
-            };
-            isPlayerReady = true;
-
-            aiPlayer = {
-                name: "AI Bot",
-                x: canvas.width * 3 / 4,
-                y: canvas.height / 2,
-                speed: 1.5,
-                id: 'ai',
-            };
-
-            gameLoop();
-            showMessage("Single Player Mode started! Defeat the AI Bot.", "bg-green-500");
-        };
-
-        const startMultiPlayer = async () => {
-            if (!playerNameInput.value) {
-                showMessage("Please enter your name!", "bg-red-500");
-                return;
-            }
-
-            singlePlayerMode = false;
-            gameMenu.classList.add('hidden');
-            gameContainer.classList.remove('hidden');
-            resizeCanvas();
-
-            // Initialize Firebase first
-            await initFirebase();
-            if (!userId) {
-                showMessage("Failed to connect to Firebase. Cannot start multiplayer.", "bg-red-500");
-                gameMenu.classList.remove('hidden');
-                gameContainer.classList.add('hidden');
-                return;
-            }
-
-            const gameRef = collection(db, 'artifacts', appId, 'public/data/games');
-            const gameSnapshot = await getDocs(gameRef);
-            let activeGames = gameSnapshot.docs.filter(doc => doc.data().players > 0);
-            
-            if (activeGames.length > 0) {
-                gameId = activeGames[0].id;
-                console.log("Joining existing game:", gameId);
-            } else {
-                gameId = crypto.randomUUID();
-                console.log("Creating new game:", gameId);
-            }
-
-            playerState = {
-                name: playerNameInput.value,
-                x: Math.random() * canvas.width,
-                y: Math.random() * canvas.height,
-                id: userId,
-            };
-            isPlayerReady = true;
-
-            await savePlayerState();
-            listenForGameUpdates();
-            showMessage("Waiting for another player to join...", "bg-yellow-500");
-        };
-
-        // Event listeners for the menu buttons
-        singlePlayerButton.addEventListener('click', startSinglePlayer);
-        multiPlayerButton.addEventListener('click', startMultiPlayer);
-
-        // Resize canvas on window resize
-        window.addEventListener('resize', resizeCanvas);
-        
-        // Cleanup on page unload
-        window.onbeforeunload = async () => {
-            if (!singlePlayerMode && userId && gameId) {
-                try {
-                    const gameDocRef = doc(db, 'artifacts', appId, 'public/data/games', gameId);
-                    const playerDocRef = doc(gameDocRef, 'players', userId);
-                    await deleteDoc(playerDocRef);
-                } catch (e) {
-                    console.error("Error removing player on unload:", e);
-                }
-            }
-        };
-
-        // Initial setup
-        resizeCanvas();
+        window.firebase = { initializeApp, getAuth, signInWithCustomToken, onAuthStateChanged, signInAnonymously, getFirestore, doc, getDoc, setDoc, onSnapshot, collection, runTransaction, query, getDocs, updateDoc, arrayUnion, arrayRemove };
     </script>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #1a202c; /* Tailwind gray-900 */
-            color: #e2e8f0; /* Tailwind gray-200 */
+            background-color: #0d121c;
+            color: #ffffff;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+
+        .game-wrapper {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             min-height: 100vh;
-            margin: 0;
-            overflow: hidden;
-        }
-        .container {
-            position: relative;
-            width: 100%;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
+            gap: 1rem;
             padding: 1rem;
         }
-        #gameMenu {
+
+        .main-panel {
             display: flex;
             flex-direction: column;
-            align-items: center;
-            background-color: #2d3748; /* Tailwind gray-700 */
-            padding: 2rem;
-            border-radius: 1rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            width: 90%;
-            max-width: 400px;
-        }
-        #gameMenu h1 {
-            font-size: 2.25rem;
-            font-weight: bold;
-            margin-bottom: 1rem;
-            color: #48bb78; /* Tailwind green-500 */
-            text-shadow: 0 0 10px #48bb78;
-        }
-        #playerName {
-            padding: 0.75rem;
-            width: 100%;
-            border-radius: 0.5rem;
-            border: 2px solid #a0aec0; /* Tailwind gray-400 */
-            background-color: #4a5568; /* Tailwind gray-600 */
-            color: white;
-            margin-bottom: 1rem;
-        }
-        .button-group {
-            display: flex;
-            flex-direction: column;
-            width: 100%;
-        }
-        .game-button {
-            padding: 1rem;
-            font-size: 1.125rem;
-            font-weight: bold;
-            border-radius: 0.75rem;
-            cursor: pointer;
-            transition: all 0.2s ease-in-out;
-            margin-bottom: 0.75rem;
-            text-transform: uppercase;
-        }
-        .game-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-        }
-        .single-player-button {
-            background: linear-gradient(to right, #63b3ed, #4299e1); /* Tailwind blue gradient */
-            color: white;
-        }
-        .multi-player-button {
-            background: linear-gradient(to right, #48bb78, #38a169); /* Tailwind green gradient */
-            color: white;
-        }
-        #gameContainer {
-            width: 100%;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-        }
-        #gameCanvas {
-            background-color: #2d3748; /* Tailwind gray-700 */
-            border-radius: 1rem;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            gap: 1rem;
             width: 100%;
             max-width: 1200px;
-            height: 100%;
-            max-height: 800px;
-            cursor: crosshair;
         }
-        #messageBox {
+
+        .top-ui {
+            background-color: #1a2233;
+            border: 2px solid #2b3547;
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        canvas {
+            background-color: #1a2233;
+            border: 2px solid #ff4655;
+            box-shadow: 0 0 20px rgba(255, 70, 85, 0.5), 0 0 10px rgba(255, 70, 85, 0.5) inset;
+            border-radius: 12px;
+            touch-action: none;
+        }
+
+        .player-info-container {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .player-card {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        
+        .chat-panel {
+            background-color: #1a2233;
+            border: 2px solid #2b3547;
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            height: 200px;
+        }
+        
+        .chat-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            border-bottom: 1px solid #2b3547;
+            padding-bottom: 0.5rem;
+        }
+        
+        .chat-input {
+            background-color: #2b3547;
+            border: none;
+            padding: 0.5rem;
+            border-radius: 8px;
+            color: white;
+        }
+
+        .modal {
             position: absolute;
-            top: 1rem;
-            left: 50%;
-            transform: translateX(-50%);
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+            display: none;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background-color: #1a2233;
+            border: 2px solid #ff4655;
+            border-radius: 12px;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
             width: 90%;
-            max-width: 400px;
-            padding: 0.75rem;
-            border-radius: 0.5rem;
+            max-width: 500px;
             text-align: center;
+        }
+        
+        .button {
+            background-color: #ff4655;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
             font-weight: bold;
-            z-index: 10;
-            opacity: 0;
-            transition: opacity 0.5s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(255, 70, 85, 0.3);
+            border: none;
+        }
+        
+        .button:hover {
+            background-color: #e63e4c;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(255, 70, 85, 0.5);
+        }
+
+        .agent-select {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .agent-card {
+            background-color: #2b3547;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            padding: 1rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+
+        .agent-card:hover {
+            border-color: #ff4655;
+        }
+
+        .agent-card.selected {
+            border-color: #4CAF50;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: #ff4655;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive Layouts */
+        @media (min-width: 768px) {
+            .game-wrapper {
+                flex-direction: row;
+                align-items: stretch;
+            }
+            .main-panel {
+                display: flex;
+                flex-direction: row;
+                align-items: stretch;
+            }
+            .top-ui {
+                display: flex;
+                flex-direction: column;
+                justify-content: flex-start;
+                width: 250px;
+            }
+            .chat-panel {
+                height: auto;
+            }
+            canvas {
+                flex-grow: 1;
+                max-width: 900px;
+                max-height: 600px;
+            }
         }
     </style>
 </head>
-<body>
-    <div class="container">
-        <div id="gameMenu">
-            <h1>Valorant 2D</h1>
-            <input type="text" id="playerName" placeholder="Enter your name" class="rounded-lg">
-            <div class="button-group">
-                <button id="singlePlayerButton" class="game-button single-player-button">Single Player</button>
-                <button id="multiPlayerButton" class="game-button multi-player-button">Multiplayer</button>
+<body class="bg-[#0d121c] text-white">
+
+    <div class="game-wrapper">
+        <div class="main-panel">
+            <!-- Left Side UI Panel -->
+            <div class="top-ui">
+                <h1 class="text-3xl font-bold text-center w-full mb-4">VALORANT 2D</h1>
+                <div id="status-panel" class="w-full text-center text-gray-400 text-sm">
+                    <p>Status: <span id="game-status">Connecting...</span></p>
+                    <p>Your ID: <span id="user-id">Loading...</span></p>
+                    <p>Game ID: <span id="app-id"></span></p>
+                    <p>Round Time: <span id="round-timer">--:--</span></p>
+                    <p>Spike: <span id="spike-status">Not Planted</span></p>
+                </div>
+
+                <div class="w-full mt-4">
+                    <h2 class="text-lg font-semibold mb-2">Players</h2>
+                    <div id="player-list" class="player-info-container">
+                        <!-- Player cards will be injected here -->
+                    </div>
+                </div>
+                
+                <div class="w-full mt-4">
+                    <h2 class="text-lg font-semibold mb-2">Chat</h2>
+                    <div class="chat-panel">
+                        <div id="chat-messages" class="chat-messages"></div>
+                        <input type="text" id="chat-input" class="chat-input" placeholder="Type a message...">
+                    </div>
+                </div>
+
+            </div>
+            
+            <!-- Game Canvas -->
+            <canvas id="gameCanvas"></canvas>
+            
+            <!-- Mobile Controls -->
+            <div class="md:hidden w-full flex justify-center gap-4 mt-4">
+                <button id="plant-button" class="button">Plant</button>
+                <button id="defuse-button" class="button">Defuse</button>
+                <button id="ability-button" class="button">Ability</button>
             </div>
         </div>
-        <div id="gameContainer" class="hidden w-full h-full p-4">
-            <canvas id="gameCanvas" class="w-full h-full"></canvas>
-            <div id="messageBox"></div>
+    </div>
+    
+    <!-- Modals -->
+    <div id="connect-modal" class="modal active">
+        <div class="modal-content">
+            <h2 class="text-2xl font-bold">Welcome to Valorant 2D</h2>
+            <p>Select your agent to join or create a game. Share the App ID with friends to play together.</p>
+            <div id="agent-select" class="agent-select">
+                <div class="agent-card" data-agent="jett">
+                    <p class="font-bold">Jett</p>
+                    <p class="text-sm text-gray-400">Dash (E)</p>
+                </div>
+                <div class="agent-card" data-agent="sova">
+                    <p class="font-bold">Sova</p>
+                    <p class="text-sm text-gray-400">Recon Dart (E)</p>
+                </div>
+                <div class="agent-card" data-agent="sage">
+                    <p class="font-bold">Sage</p>
+                    <p class="text-sm text-gray-400">Barrier Orb (E)</p>
+                </div>
+            </div>
+            <button id="join-game-button" class="button mt-4" disabled>Join Game</button>
+            <div id="loading-spinner" class="spinner hidden"></div>
         </div>
     </div>
+
+    <div id="game-over-modal" class="modal">
+        <div class="modal-content">
+            <h2 id="game-over-title" class="text-2xl font-bold">Game Over!</h2>
+            <p id="game-over-text">The Spike was planted and detonated!</p>
+            <button id="start-new-round" class="button">Start New Round</button>
+        </div>
+    </div>
+
+<script type="module">
+    // Firebase service initialization
+    const { initializeApp, getAuth, signInWithCustomToken, onAuthStateChanged, signInAnonymously, getFirestore, doc, getDoc, setDoc, onSnapshot, collection, runTransaction, query, getDocs, updateDoc, arrayUnion, arrayRemove } = window.firebase;
+
+    // Global variables from Canvas environment
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+    // UI Elements
+    const connectModal = document.getElementById('connect-modal');
+    const gameOverModal = document.getElementById('game-over-modal');
+    const joinGameButton = document.getElementById('join-game-button');
+    const agentSelectDiv = document.getElementById('agent-select');
+    const gameStatusEl = document.getElementById('game-status');
+    const userIdEl = document.getElementById('user-id');
+    const appIdEl = document.getElementById('app-id');
+    const playerListEl = document.getElementById('player-list');
+    const chatMessagesEl = document.getElementById('chat-messages');
+    const chatInputEl = document.getElementById('chat-input');
+    const loadingSpinner = document.getElementById('loading-spinner');
+    const roundTimerEl = document.getElementById('round-timer');
+    const spikeStatusEl = document.getElementById('spike-status');
+    const plantButton = document.getElementById('plant-button');
+    const defuseButton = document.getElementById('defuse-button');
+    const abilityButton = document.getElementById('ability-button');
+    const startNewRoundButton = document.getElementById('start-new-round');
+
+    // Canvas and Context
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Game State & Constants
+    const TILE_SIZE = 40;
+    const PLAYER_SPEED = 2;
+    const BULLET_SPEED = 15;
+    const FIRE_RATE = 100; // milliseconds
+    const SPIKE_TIMER_SECONDS = 40;
+    
+    // Map data: 0 = wall, 1 = empty space, 2 = spike zone
+    const map = [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 2, 2, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 2, 2, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    ];
+    const mapWidth = map[0].length * TILE_SIZE;
+    const mapHeight = map.length * TILE_SIZE;
+
+    // Agent data
+    const AGENTS = {
+        jett: { color: '#87CEEB', ability: 'dash', abilityCooldown: 5000 },
+        sova: { color: '#008080', ability: 'recon', abilityCooldown: 10000 },
+        sage: { color: '#00FA9A', ability: 'wall', abilityCooldown: 8000 },
+    };
+
+    // Game variables
+    let db, auth;
+    let userId;
+    let gameRoomRef;
+    let gameRoomData;
+    let playerState = {
+        x: 100,
+        y: 100,
+        hp: 100,
+        agent: null,
+        isDead: false,
+    };
+    let keys = {};
+    let mouse = { x: 0, y: 0, clicked: false, lastShot: 0 };
+    let animations = {};
+    let isGameRunning = false;
+    let gameLoopId;
+    let lastPlayerUpdate = 0;
+    const playerUpdateInterval = 100; // Update player position every 100ms
+    const chatUpdateInterval = 1000; // Update chat messages every 1 second
+
+    // --- Firebase & Game Initialization ---
+    /**
+     * Authenticates the user and initializes the Firebase services.
+     */
+    async function initFirebase() {
+        if (!firebaseConfig.projectId) {
+            console.error("Firebase config not available. Cannot initialize.");
+            gameStatusEl.textContent = 'Auth Failed';
+            return;
+        }
+
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+
+        // Sign in with the provided token if available, otherwise sign in anonymously
+        try {
+            if (initialAuthToken) {
+                await signInWithCustomToken(auth, initialAuthToken);
+            } else {
+                await signInAnonymously(auth);
+            }
+        } catch (error) {
+            console.error("Authentication failed:", error);
+            gameStatusEl.textContent = 'Auth Failed';
+            return;
+        }
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                userIdEl.textContent = userId;
+                appIdEl.textContent = appId;
+                gameStatusEl.textContent = 'Select Agent';
+                connectModal.classList.add('active');
+            } else {
+                console.log("User signed out.");
+            }
+        });
+    }
+
+    /**
+     * Joins or creates a new game room.
+     */
+    async function joinOrCreateGame() {
+        if (!playerState.agent) {
+            console.log('Please select an agent first!');
+            return;
+        }
+
+        loadingSpinner.classList.remove('hidden');
+        joinGameButton.disabled = true;
+
+        try {
+            gameRoomRef = doc(db, 'artifacts', appId, 'public', 'data', 'game_room');
+
+            // Use a transaction to safely join or create the game
+            await runTransaction(db, async (transaction) => {
+                const gameDoc = await transaction.get(gameRoomRef);
+                const playersPath = `players.${userId}`;
+
+                // Check if a game room exists
+                if (!gameDoc.exists()) {
+                    // Create a new game room with initial state
+                    transaction.set(gameRoomRef, {
+                        gameState: 'lobby',
+                        spike: {
+                            planted: false,
+                            planterId: null,
+                            location: null,
+                            timer: 0,
+                        },
+                        bullets: [],
+                        chat: [],
+                        roundStartTime: Date.now(),
+                        players: {
+                            [userId]: {
+                                name: 'Player_' + userId.substring(0, 5),
+                                x: Math.random() * (mapWidth - 100) + 50,
+                                y: Math.random() * (mapHeight - 100) + 50,
+                                hp: 100,
+                                agent: playerState.agent,
+                                isDead: false,
+                                lastShot: 0,
+                                lastAbility: 0,
+                            }
+                        }
+                    });
+                } else {
+                    // Game room exists, add this player
+                    const gameData = gameDoc.data();
+                    const players = gameData.players || {};
+                    players[userId] = {
+                        name: 'Player_' + userId.substring(0, 5),
+                        x: Math.random() * (mapWidth - 100) + 50,
+                        y: Math.random() * (mapHeight - 100) + 50,
+                        hp: 100,
+                        agent: playerState.agent,
+                        isDead: false,
+                        lastShot: 0,
+                        lastAbility: 0,
+                    };
+                    transaction.update(gameRoomRef, { players });
+                }
+            });
+
+            connectModal.classList.remove('active');
+            setupRealtimeListener();
+            isGameRunning = true;
+            startGameLoop();
+        } catch (error) {
+            console.error("Failed to join or create game:", error);
+            gameStatusEl.textContent = 'Join Failed';
+            loadingSpinner.classList.add('hidden');
+            joinGameButton.disabled = false;
+        }
+    }
+
+    /**
+     * Sets up the Firestore real-time listener for the game room.
+     */
+    function setupRealtimeListener() {
+        onSnapshot(gameRoomRef, (doc) => {
+            if (doc.exists()) {
+                gameRoomData = doc.data();
+                updateUI();
+                renderGame();
+                checkGameOver();
+            }
+        });
+    }
+
+    // --- Game Logic Functions ---
+    function updateUI() {
+        // Update player list
+        playerListEl.innerHTML = '';
+        if (gameRoomData && gameRoomData.players) {
+            Object.keys(gameRoomData.players).forEach(pId => {
+                const player = gameRoomData.players[pId];
+                const card = document.createElement('div');
+                card.className = 'player-card';
+                card.innerHTML = `
+                    <p class="font-bold">${player.name}</p>
+                    <p class="text-sm text-gray-400">Agent: ${player.agent}</p>
+                    <p class="text-sm text-gray-400">HP: ${player.hp}</p>
+                `;
+                playerListEl.appendChild(card);
+            });
+        }
+        // Update game status and timer
+        if (gameRoomData) {
+            gameStatusEl.textContent = gameRoomData.gameState;
+            const now = Date.now();
+            const roundTimeLeft = Math.max(0, 90 - Math.floor((now - gameRoomData.roundStartTime) / 1000));
+            roundTimerEl.textContent = `${Math.floor(roundTimeLeft / 60).toString().padStart(2, '0')}:${(roundTimeLeft % 60).toString().padStart(2, '0')}`;
+            
+            // Update spike status
+            if (gameRoomData.spike.planted) {
+                spikeStatusEl.textContent = `Planted (${gameRoomData.spike.timer})`;
+                spikeStatusEl.style.color = '#ff4655';
+            } else {
+                spikeStatusEl.textContent = 'Not Planted';
+                spikeStatusEl.style.color = '#ffffff';
+            }
+        }
+    }
+    
+    function checkGameOver() {
+        if (!gameRoomData) return;
+        const players = gameRoomData.players || {};
+        const alivePlayers = Object.values(players).filter(p => !p.isDead);
+        const teams = { jett: [], sova: [], sage: [] };
+        Object.values(players).forEach(p => teams[p.agent].push(p));
+
+        const attackers = [...teams.jett, ...teams.sova];
+        const defenders = [...teams.sage];
+
+        let gameOverMessage = '';
+        if (gameRoomData.spike.planted) {
+            if (gameRoomData.spike.timer <= 0) {
+                gameOverMessage = 'Spike detonated! Attackers win!';
+            } else if (defenders.every(p => p.isDead)) {
+                gameOverMessage = 'All defenders eliminated! Attackers win!';
+            }
+        } else {
+            if (attackers.every(p => p.isDead)) {
+                gameOverMessage = 'All attackers eliminated! Defenders win!';
+            }
+        }
+        
+        if (gameOverMessage) {
+            endRound(gameOverMessage);
+        }
+    }
+
+    function endRound(message) {
+        isGameRunning = false;
+        cancelAnimationFrame(gameLoopId);
+        document.getElementById('game-over-title').textContent = 'Game Over!';
+        document.getElementById('game-over-text').textContent = message;
+        gameOverModal.classList.add('active');
+    }
+
+    async function startNewRound() {
+        gameOverModal.classList.remove('active');
+        // Reset game state in Firestore
+        try {
+            await updateDoc(gameRoomRef, {
+                gameState: 'playing',
+                spike: {
+                    planted: false,
+                    planterId: null,
+                    location: null,
+                    timer: 0,
+                },
+                bullets: [],
+                chat: [],
+                roundStartTime: Date.now(),
+            });
+            // Reset player states locally and in Firestore
+            for (const pId in gameRoomData.players) {
+                await updateDoc(doc(gameRoomRef, `players.${pId}`), {
+                    x: Math.random() * (mapWidth - 100) + 50,
+                    y: Math.random() * (mapHeight - 100) + 50,
+                    hp: 100,
+                    isDead: false,
+                });
+            }
+            isGameRunning = true;
+            startGameLoop();
+        } catch (error) {
+            console.error("Failed to start new round:", error);
+        }
+    }
+
+    function renderGame() {
+        canvas.width = mapWidth;
+        canvas.height = mapHeight;
+        
+        // Draw map
+        for (let row = 0; row < map.length; row++) {
+            for (let col = 0; col < map[row].length; col++) {
+                ctx.fillStyle = map[row][col] === 0 ? '#2b3547' : (map[row][col] === 2 ? 'rgba(76, 175, 80, 0.2)' : '#1a2233');
+                ctx.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            }
+        }
+
+        // Draw players
+        if (gameRoomData && gameRoomData.players) {
+            Object.keys(gameRoomData.players).forEach(pId => {
+                const player = gameRoomData.players[pId];
+                if (!player.isDead) {
+                    ctx.fillStyle = AGENTS[player.agent].color;
+                    ctx.beginPath();
+                    ctx.arc(player.x, player.y, TILE_SIZE / 2, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Draw player name
+                    ctx.fillStyle = 'white';
+                    ctx.textAlign = 'center';
+                    ctx.font = '12px Inter';
+                    ctx.fillText(player.name, player.x, player.y - TILE_SIZE / 2 - 5);
+
+                    // Draw HP bar
+                    ctx.fillStyle = 'red';
+                    ctx.fillRect(player.x - TILE_SIZE / 2, player.y + TILE_SIZE / 2 + 5, TILE_SIZE, 5);
+                    ctx.fillStyle = 'green';
+                    ctx.fillRect(player.x - TILE_SIZE / 2, player.y + TILE_SIZE / 2 + 5, TILE_SIZE * (player.hp / 100), 5);
+                }
+            });
+        }
+        
+        // Draw bullets
+        if (gameRoomData && gameRoomData.bullets) {
+            gameRoomData.bullets.forEach(bullet => {
+                ctx.fillStyle = 'yellow';
+                ctx.beginPath();
+                ctx.arc(bullet.x, bullet.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+    }
+
+    function checkWallCollision(x, y) {
+        const col = Math.floor(x / TILE_SIZE);
+        const row = Math.floor(y / TILE_SIZE);
+        if (row < 0 || row >= map.length || col < 0 || col >= map[0].length) {
+            return true;
+        }
+        return map[row][col] === 0;
+    }
+
+    async function updateGameLoop() {
+        if (!isGameRunning || !gameRoomData || !gameRoomData.players[userId]) {
+            gameLoopId = requestAnimationFrame(updateGameLoop);
+            return;
+        }
+
+        const now = Date.now();
+        const player = gameRoomData.players[userId];
+        let newX = player.x;
+        let newY = player.y;
+
+        // Player Movement
+        if (keys['w']) newY -= PLAYER_SPEED;
+        if (keys['s']) newY += PLAYER_SPEED;
+        if (keys['a']) newX -= PLAYER_SPEED;
+        if (keys['d']) newX += PLAYER_SPEED;
+
+        // Wall collision check
+        if (!checkWallCollision(newX, newY)) {
+            playerState.x = newX;
+            playerState.y = newY;
+        }
+
+        // Mouse click for shooting
+        if (mouse.clicked && now - mouse.lastShot > FIRE_RATE) {
+            const angle = Math.atan2(mouse.y - playerState.y, mouse.x - playerState.x);
+            const bullet = {
+                x: playerState.x + Math.cos(angle) * TILE_SIZE,
+                y: playerState.y + Math.sin(angle) * TILE_SIZE,
+                vx: Math.cos(angle) * BULLET_SPEED,
+                vy: Math.sin(angle) * BULLET_SPEED,
+                ownerId: userId,
+            };
+            
+            // Add bullet to Firestore
+            await updateDoc(gameRoomRef, {
+                bullets: arrayUnion(bullet)
+            });
+            mouse.lastShot = now;
+        }
+
+        // Handle ability key press
+        if (keys['e'] && now - player.lastAbility > AGENTS[player.agent].abilityCooldown) {
+            await updateDoc(gameRoomRef, {
+                [`players.${userId}.lastAbility`]: now
+            });
+            // Implement ability logic based on agent
+            // (This is a complex part and would need more detail)
+        }
+
+        // Handle spike plant/defuse
+        const col = Math.floor(playerState.x / TILE_SIZE);
+        const row = Math.floor(playerState.y / TILE_SIZE);
+        if (map[row][col] === 2) {
+            plantButton.style.display = 'block';
+            if (keys['p']) {
+                await updateDoc(gameRoomRef, {
+                    'spike.planted': true,
+                    'spike.planterId': userId,
+                    'spike.location': { x: playerState.x, y: playerState.y },
+                    'spike.timer': SPIKE_TIMER_SECONDS,
+                });
+            }
+        } else {
+            plantButton.style.display = 'none';
+        }
+
+        // Update spike timer in Firestore
+        if (gameRoomData.spike.planted) {
+            const timeSincePlant = Math.floor((now - gameRoomData.roundStartTime) / 1000);
+            const newTimer = Math.max(0, SPIKE_TIMER_SECONDS - timeSincePlant);
+            await updateDoc(gameRoomRef, {
+                'spike.timer': newTimer,
+            });
+        }
+        
+        // Check for bullet collisions locally and update HP in Firestore
+        if (gameRoomData.bullets && gameRoomData.players) {
+            let bulletsToRemove = [];
+            let hpUpdates = {};
+
+            gameRoomData.bullets.forEach((bullet, index) => {
+                if (bullet.ownerId !== userId) {
+                    const dist = Math.hypot(bullet.x - playerState.x, bullet.y - playerState.y);
+                    if (dist < TILE_SIZE / 2) {
+                        bulletsToRemove.push(bullet);
+                        hpUpdates[userId] = (hpUpdates[userId] || playerState.hp) - 20;
+                    }
+                }
+            });
+            
+            // Update HP and bullets in a single transaction
+            if (Object.keys(hpUpdates).length > 0 || bulletsToRemove.length > 0) {
+                 await runTransaction(db, async (transaction) => {
+                    const gameDoc = await transaction.get(gameRoomRef);
+                    const currentBullets = gameDoc.data().bullets || [];
+                    const updatedBullets = currentBullets.filter(b => !bulletsToRemove.some(br => JSON.stringify(br) === JSON.stringify(b)));
+                    transaction.update(gameRoomRef, { bullets: updatedBullets });
+                    
+                    if (hpUpdates[userId] !== undefined) {
+                        transaction.update(doc(db, 'artifacts', appId, 'public', 'data', 'game_room', `players.${userId}`), { hp: hpUpdates[userId] });
+                    }
+                 });
+            }
+        }
+        
+        // Update player's position in Firestore
+        if (now - lastPlayerUpdate > playerUpdateInterval) {
+            await updateDoc(doc(gameRoomRef, `players.${userId}`), {
+                x: playerState.x,
+                y: playerState.y,
+            });
+            lastPlayerUpdate = now;
+        }
+
+        gameLoopId = requestAnimationFrame(updateGameLoop);
+    }
+    
+    // --- Event Listeners and Setup ---
+    window.addEventListener('keydown', (e) => {
+        keys[e.key.toLowerCase()] = true;
+    });
+
+    window.addEventListener('keyup', (e) => {
+        keys[e.key.toLowerCase()] = false;
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        mouse.x = e.clientX - rect.left;
+        mouse.y = e.clientY - rect.top;
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+        mouse.clicked = true;
+    });
+
+    canvas.addEventListener('mouseup', () => {
+        mouse.clicked = false;
+    });
+
+    // Touch events for mobile
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        mouse.x = touch.clientX - rect.left;
+        mouse.y = touch.clientY - rect.top;
+        mouse.clicked = true;
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', () => {
+        mouse.clicked = false;
+    });
+
+    chatInputEl.addEventListener('keydown', async (e) => {
+        if (e.key === 'Enter' && chatInputEl.value.trim() !== '') {
+            const message = {
+                senderId: userId,
+                senderName: gameRoomData.players[userId].name,
+                text: chatInputEl.value.trim(),
+                timestamp: Date.now(),
+            };
+            await updateDoc(gameRoomRef, { chat: arrayUnion(message) });
+            chatInputEl.value = '';
+        }
+    });
+
+    startNewRoundButton.addEventListener('click', startNewRound);
+
+    // Agent selection
+    agentSelectDiv.addEventListener('click', (e) => {
+        const agentCard = e.target.closest('.agent-card');
+        if (agentCard) {
+            // Remove 'selected' class from all cards
+            document.querySelectorAll('.agent-card').forEach(card => card.classList.remove('selected'));
+            // Add 'selected' class to the clicked card
+            agentCard.classList.add('selected');
+            playerState.agent = agentCard.dataset.agent;
+            joinGameButton.disabled = false;
+        }
+    });
+
+    joinGameButton.addEventListener('click', joinOrCreateGame);
+
+    window.onbeforeunload = async () => {
+        if (userId && gameRoomRef) {
+            try {
+                // Remove the player from the game room upon leaving
+                await runTransaction(db, async (transaction) => {
+                    const gameDoc = await transaction.get(gameRoomRef);
+                    if (gameDoc.exists()) {
+                        const players = gameDoc.data().players;
+                        delete players[userId];
+                        transaction.update(gameRoomRef, { players });
+                    }
+                });
+            } catch (e) {
+                console.error("Failed to remove player on unload:", e);
+            }
+        }
+    };
+    
+    // Initial setup
+    initFirebase();
+</script>
 </body>
 </html>
