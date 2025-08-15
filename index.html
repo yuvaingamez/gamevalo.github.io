@@ -396,6 +396,7 @@
      * Authenticates the user and initializes the Firebase services.
      */
     async function initFirebase() {
+        gameStatusEl.textContent = 'Connecting...';
         if (!firebaseConfig.projectId) {
             console.error("Firebase config not available. Cannot initialize.");
             gameStatusEl.textContent = 'Auth Failed';
@@ -419,12 +420,12 @@
             return;
         }
 
-        onAuthStateChanged(auth, async (user) => {
+        onAuthStateChanged(auth, (user) => {
             if (user) {
                 userId = user.uid;
                 userIdEl.textContent = userId;
                 appIdEl.textContent = appId;
-                gameStatusEl.textContent = 'Select Agent';
+                gameStatusEl.textContent = 'Authenticated. Select Agent';
                 connectModal.classList.add('active');
             } else {
                 console.log("User signed out.");
@@ -438,6 +439,11 @@
     async function joinOrCreateGame() {
         if (!playerState.agent) {
             console.log('Please select an agent first!');
+            return;
+        }
+        if (!db || !auth) {
+            console.error("Firebase services not initialized.");
+            gameStatusEl.textContent = 'Initialization Failed';
             return;
         }
 
