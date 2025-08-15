@@ -9,9 +9,10 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInWithCustomToken, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, runTransaction, query, getDocs, updateDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, runTransaction, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        window.firebase = { initializeApp, getAuth, signInWithCustomToken, onAuthStateChanged, signInAnonymously, getFirestore, doc, getDoc, setDoc, onSnapshot, collection, runTransaction, query, getDocs, updateDoc, arrayUnion, arrayRemove };
+        // Expose Firebase services to the global window object for use in the script
+        window.firebase = { initializeApp, getAuth, signInWithCustomToken, onAuthStateChanged, signInAnonymously, getFirestore, doc, getDoc, setDoc, onSnapshot, collection, runTransaction, query, getDocs };
     </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
@@ -20,880 +21,537 @@
             font-family: 'Inter', sans-serif;
             background-color: #0d121c;
             color: #ffffff;
-            overflow: hidden;
-            user-select: none;
-            -webkit-user-select: none;
-            touch-action: none;
+            overflow: hidden; /* Prevent scrolling */
         }
-
-        .game-wrapper {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            gap: 1rem;
-            padding: 1rem;
-        }
-
-        .main-panel {
-            display: flex;
-            flex-direction: column;
-            gap: 1rem;
-            width: 100%;
-            max-width: 1200px;
-        }
-
-        .top-ui {
-            background-color: #1a2233;
-            border: 2px solid #2b3547;
-            border-radius: 12px;
-            padding: 1rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 1rem;
-        }
-        
         canvas {
-            background-color: #1a2233;
-            border: 2px solid #ff4655;
-            box-shadow: 0 0 20px rgba(255, 70, 85, 0.5), 0 0 10px rgba(255, 70, 85, 0.5) inset;
-            border-radius: 12px;
-            touch-action: none;
-        }
-
-        .player-info-container {
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-        }
-
-        .player-card {
-            background-color: rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 0.5rem 1rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.25rem;
-        }
-        
-        .chat-panel {
-            background-color: #1a2233;
-            border: 2px solid #2b3547;
-            border-radius: 12px;
-            padding: 1rem;
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-            height: 200px;
-        }
-        
-        .chat-messages {
-            flex-grow: 1;
-            overflow-y: auto;
-            border-bottom: 1px solid #2b3547;
-            padding-bottom: 0.5rem;
-        }
-        
-        .chat-input {
-            background-color: #2b3547;
-            border: none;
-            padding: 0.5rem;
-            border-radius: 8px;
-            color: white;
-        }
-
-        .modal {
-            position: absolute;
-            top: 0;
-            left: 0;
+            background-color: #eee;
+            display: block;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        }
+        #messageBox {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             z-index: 100;
-            backdrop-filter: blur(5px);
-            display: none;
-        }
-        
-        .modal.active {
-            display: flex;
-        }
-
-        .modal-content {
-            background-color: #1a2233;
-            border: 2px solid #ff4655;
-            border-radius: 12px;
+            background-color: #2a3447;
+            border: 2px solid #5d758c;
+            border-radius: 8px;
             padding: 2rem;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 1rem;
-            width: 90%;
-            max-width: 500px;
             text-align: center;
+            display: none; /* Hidden by default */
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
         }
-        
-        .button {
-            background-color: #ff4655;
-            color: white;
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            font-weight: bold;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            transition: all 0.3s ease;
-            cursor: pointer;
-            box-shadow: 0 4px 10px rgba(255, 70, 85, 0.3);
-            border: none;
+        .message-content {
+            font-size: 1.1rem;
+            color: #fff;
         }
-        
-        .button:hover {
-            background-color: #e63e4c;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 15px rgba(255, 70, 85, 0.5);
+        .button-shadow {
+            box-shadow: 0 4px #0f1621;
+            transition: all 0.1s ease;
         }
-
-        .agent-select {
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-
-        .agent-card {
-            background-color: #2b3547;
-            border: 2px solid transparent;
-            border-radius: 8px;
-            padding: 1rem;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            text-align: center;
-        }
-
-        .agent-card:hover {
-            border-color: #ff4655;
-        }
-
-        .agent-card.selected {
-            border-color: #4CAF50;
-            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
-        }
-
-        .spinner {
-            border: 4px solid rgba(255, 255, 255, 0.1);
-            border-left-color: #ff4655;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        /* Responsive Layouts */
-        @media (min-width: 768px) {
-            .game-wrapper {
-                flex-direction: row;
-                align-items: stretch;
-            }
-            .main-panel {
-                display: flex;
-                flex-direction: row;
-                align-items: stretch;
-            }
-            .top-ui {
-                display: flex;
-                flex-direction: column;
-                justify-content: flex-start;
-                width: 250px;
-            }
-            .chat-panel {
-                height: auto;
-            }
-            canvas {
-                flex-grow: 1;
-                max-width: 900px;
-                max-height: 600px;
-            }
+        .button-shadow:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px #0f1621;
         }
     </style>
 </head>
-<body class="bg-[#0d121c] text-white">
+<body class="flex flex-col md:flex-row h-screen w-screen p-4 gap-4">
 
-    <div class="game-wrapper">
-        <div class="main-panel">
-            <!-- Left Side UI Panel -->
-            <div class="top-ui">
-                <h1 class="text-3xl font-bold text-center w-full mb-4">VALORANT 2D</h1>
-                <div id="status-panel" class="w-full text-center text-gray-400 text-sm">
-                    <p>Status: <span id="game-status">Connecting...</span></p>
-                    <p>Your ID: <span id="user-id">Loading...</span></p>
-                    <p>Game ID: <span id="app-id"></span></p>
-                    <p>Round Time: <span id="round-timer">--:--</span></p>
-                    <p>Spike: <span id="spike-status">Not Planted</span></p>
+    <!-- Left UI Panel -->
+    <aside class="w-full md:w-1/4 h-1/2 md:h-full flex flex-col p-6 space-y-4 rounded-xl border border-red-500/50 bg-gray-900/50">
+        <!-- Game Title -->
+        <div class="text-2xl md:text-3xl font-bold text-white text-center mb-4">VALORANT 2D</div>
+        <div class="flex-1 flex flex-col space-y-4">
+            <!-- Game Status -->
+            <div class="p-4 rounded-lg bg-gray-800 border border-gray-700">
+                <h3 class="font-bold text-gray-400 mb-2">Game Status</h3>
+                <p id="gameStatusEl" class="text-sm text-green-400">Loading...</p>
+                <div class="mt-2 text-sm text-gray-400">
+                    <span class="font-bold">App ID:</span> <span id="appIdEl">...</span>
                 </div>
-
-                <div class="w-full mt-4">
-                    <h2 class="text-lg font-semibold mb-2">Players</h2>
-                    <div id="player-list" class="player-info-container">
-                        <!-- Player cards will be injected here -->
-                    </div>
-                </div>
-                
-                <div class="w-full mt-4">
-                    <h2 class="text-lg font-semibold mb-2">Chat</h2>
-                    <div class="chat-panel">
-                        <div id="chat-messages" class="chat-messages"></div>
-                        <input type="text" id="chat-input" class="chat-input" placeholder="Type a message...">
-                    </div>
-                </div>
-
-            </div>
-            
-            <!-- Game Canvas -->
-            <canvas id="gameCanvas"></canvas>
-            
-            <!-- Mobile Controls -->
-            <div class="md:hidden w-full flex justify-center gap-4 mt-4">
-                <button id="plant-button" class="button">Plant</button>
-                <button id="defuse-button" class="button">Defuse</button>
-                <button id="ability-button" class="button">Ability</button>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Modals -->
-    <div id="connect-modal" class="modal active">
-        <div class="modal-content">
-            <h2 class="text-2xl font-bold">Welcome to Valorant 2D</h2>
-            <p>Select your agent to join or create a game. Share the App ID with friends to play together.</p>
-            <div id="agent-select" class="agent-select">
-                <div class="agent-card" data-agent="jett">
-                    <p class="font-bold">Jett</p>
-                    <p class="text-sm text-gray-400">Dash (E)</p>
-                </div>
-                <div class="agent-card" data-agent="sova">
-                    <p class="font-bold">Sova</p>
-                    <p class="text-sm text-gray-400">Recon Dart (E)</p>
-                </div>
-                <div class="agent-card" data-agent="sage">
-                    <p class="font-bold">Sage</p>
-                    <p class="text-sm text-gray-400">Barrier Orb (E)</p>
+                <div class="mt-2 text-sm text-gray-400">
+                    <span class="font-bold">User ID:</span> <span id="userIdEl">...</span>
                 </div>
             </div>
-            <button id="join-game-button" class="button mt-4" disabled>Join Game</button>
-            <div id="loading-spinner" class="spinner hidden"></div>
+
+            <!-- Player List -->
+            <div class="p-4 rounded-lg bg-gray-800 border border-gray-700 overflow-y-auto flex-1">
+                <h3 class="font-bold text-gray-400 mb-2">Players</h3>
+                <ul id="playerListEl" class="space-y-2 text-sm text-gray-300">
+                    <!-- Player list will be dynamically populated here -->
+                </ul>
+            </div>
+
+            <!-- Chat and Scoreboard - Placeholder for future features -->
+            <div class="p-4 rounded-lg bg-gray-800 border border-gray-700 flex-1">
+                <h3 class="font-bold text-gray-400 mb-2">Chat</h3>
+            </div>
+            <div class="p-4 rounded-lg bg-gray-800 border border-gray-700 flex-1">
+                <h3 class="font-bold text-gray-400 mb-2">Score</h3>
+            </div>
         </div>
-    </div>
+    </aside>
 
-    <div id="game-over-modal" class="modal">
-        <div class="modal-content">
-            <h2 id="game-over-title" class="text-2xl font-bold">Game Over!</h2>
-            <p id="game-over-text">The Spike was planted and detonated!</p>
-            <button id="start-new-round" class="button">Start New Round</button>
+    <!-- Game Canvas -->
+    <main class="w-full md:w-3/4 flex flex-col items-center justify-center relative bg-gray-900 rounded-xl border border-red-500/50">
+        <canvas id="gameCanvas" class="rounded-xl"></canvas>
+        
+        <!-- Welcome/Join Modal -->
+        <div id="welcomeModal" class="absolute z-50 p-6 rounded-lg border border-red-500/50 bg-gray-900/75 backdrop-blur-sm shadow-2xl transition-opacity duration-300">
+            <h2 class="text-xl md:text-2xl font-bold text-center mb-4 text-white">Welcome to Valorant 2D</h2>
+            <p class="text-sm md:text-base text-gray-300 text-center mb-6">
+                Select your agent to join or create a game. Share the App ID with friends to play together.
+            </p>
+            <div class="flex flex-col md:flex-row justify-center items-center gap-4 mb-8">
+                <div class="flex flex-col items-center text-center cursor-pointer transition-transform transform hover:scale-105" data-agent="jett">
+                    <span class="text-3xl">🪂</span>
+                    <span class="text-sm md:text-base font-medium">Jett</span>
+                    <span class="text-xs text-gray-400">[E] Dash</span>
+                </div>
+                <div class="flex flex-col items-center text-center cursor-pointer transition-transform transform hover:scale-105" data-agent="sova">
+                    <span class="text-3xl">🏹</span>
+                    <span class="text-sm md:text-base font-medium">Sova</span>
+                    <span class="text-xs text-gray-400">[E] Recon Dart</span>
+                </div>
+                <div class="flex flex-col items-center text-center cursor-pointer transition-transform transform hover:scale-105" data-agent="sage">
+                    <span class="text-3xl">🔮</span>
+                    <span class="text-sm md:text-base font-medium">Sage</span>
+                    <span class="text-xs text-gray-400">[E] Barrier Orb</span>
+                </div>
+            </div>
+            <button id="joinButton" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-xl button-shadow">
+                JOIN GAME
+            </button>
         </div>
-    </div>
 
-<script type="module">
-    // Firebase service initialization
-    const { initializeApp, getAuth, signInWithCustomToken, onAuthStateChanged, signInAnonymously, getFirestore, doc, getDoc, setDoc, onSnapshot, collection, runTransaction, query, getDocs, updateDoc, arrayUnion, arrayRemove } = window.firebase;
+        <!-- Message Box for Alerts -->
+        <div id="messageBox" class="p-6 rounded-lg shadow-xl border border-gray-700 bg-gray-900">
+            <p id="messageContent" class="text-center font-semibold"></p>
+        </div>
 
-    // Global variables from Canvas environment
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+    </main>
 
-    // UI Elements
-    const connectModal = document.getElementById('connect-modal');
-    const gameOverModal = document.getElementById('game-over-modal');
-    const joinGameButton = document.getElementById('join-game-button');
-    const agentSelectDiv = document.getElementById('agent-select');
-    const gameStatusEl = document.getElementById('game-status');
-    const userIdEl = document.getElementById('user-id');
-    const appIdEl = document.getElementById('app-id');
-    const playerListEl = document.getElementById('player-list');
-    const chatMessagesEl = document.getElementById('chat-messages');
-    const chatInputEl = document.getElementById('chat-input');
-    const loadingSpinner = document.getElementById('loading-spinner');
-    const roundTimerEl = document.getElementById('round-timer');
-    const spikeStatusEl = document.getElementById('spike-status');
-    const plantButton = document.getElementById('plant-button');
-    const defuseButton = document.getElementById('defuse-button');
-    const abilityButton = document.getElementById('ability-button');
-    const startNewRoundButton = document.getElementById('start-new-round');
+    <script type="module">
+        // Global variables for Firebase services, automatically provided by the Canvas environment.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // Game-related constants
+        const mapWidth = 1024;
+        const mapHeight = 768;
+        const playerSize = 25;
+        const playerSpeed = 3;
+        const bulletSpeed = 8;
+        const walls = [
+            // Outer walls
+            { x: 0, y: 0, width: mapWidth, height: 10 },
+            { x: 0, y: 0, width: 10, height: mapHeight },
+            { x: mapWidth - 10, y: 0, width: 10, height: mapHeight },
+            { x: 0, y: mapHeight - 10, width: mapWidth, height: 10 },
+            // Inner walls
+            { x: 200, y: 200, width: 600, height: 10 },
+            { x: 200, y: 200, width: 10, height: 400 },
+            { x: 790, y: 200, width: 10, height: 400 },
+            { x: 200, y: 600, width: 600, height: 10 },
+        ];
 
-    // Canvas and Context
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    
-    // Game State & Constants
-    const TILE_SIZE = 40;
-    const PLAYER_SPEED = 2;
-    const BULLET_SPEED = 15;
-    const FIRE_RATE = 100; // milliseconds
-    const SPIKE_TIMER_SECONDS = 40;
-    
-    // Map data: 0 = wall, 1 = empty space, 2 = spike zone
-    const map = [
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-        [0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0],
-        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
-        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
-        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
-        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
-        [0, 1, 1, 1, 1, 1, 0, 1, 1, 2, 2, 1, 0, 1, 1, 1, 1, 1, 1, 0],
-        [0, 1, 1, 1, 1, 1, 0, 1, 1, 2, 2, 1, 0, 1, 1, 1, 1, 1, 1, 0],
-        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
-        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
-        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
-        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
-        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    ];
-    const mapWidth = map[0].length * TILE_SIZE;
-    const mapHeight = map.length * TILE_SIZE;
+        // UI elements
+        const gameCanvas = document.getElementById('gameCanvas');
+        const ctx = gameCanvas.getContext('2d');
+        const gameStatusEl = document.getElementById('gameStatusEl');
+        const appIdEl = document.getElementById('appIdEl');
+        const userIdEl = document.getElementById('userIdEl');
+        const welcomeModal = document.getElementById('welcomeModal');
+        const joinButton = document.getElementById('joinButton');
+        const playerListEl = document.getElementById('playerListEl');
+        const messageBox = document.getElementById('messageBox');
+        const messageContentEl = document.getElementById('messageContent');
 
-    // Agent data
-    const AGENTS = {
-        jett: { color: '#87CEEB', ability: 'dash', abilityCooldown: 5000 },
-        sova: { color: '#008080', ability: 'recon', abilityCooldown: 10000 },
-        sage: { color: '#00FA9A', ability: 'wall', abilityCooldown: 8000 },
-    };
+        // Game state and data
+        let db, auth;
+        let localPlayerId = '';
+        let localPlayerAgent = 'jett';
+        let gameState = {
+            players: {},
+            bullets: {},
+        };
+        let lastUpdateTime = 0;
+        const updateInterval = 1000 / 60; // 60 FPS
 
-    // Game variables
-    let db, auth;
-    let userId;
-    let gameRoomRef;
-    let gameRoomData;
-    let playerState = {
-        x: 100,
-        y: 100,
-        hp: 100,
-        agent: null,
-        isDead: false,
-    };
-    let keys = {};
-    let mouse = { x: 0, y: 0, clicked: false, lastShot: 0 };
-    let animations = {};
-    let isGameRunning = false;
-    let gameLoopId;
-    let lastPlayerUpdate = 0;
-    const playerUpdateInterval = 100; // Update player position every 100ms
-    const chatUpdateInterval = 1000; // Update chat messages every 1 second
+        // Input state
+        const keys = {};
+        const mouse = { x: 0, y: 0, clicked: false };
 
-    // --- Firebase & Game Initialization ---
-    /**
-     * Authenticates the user and initializes the Firebase services.
-     */
-    async function initFirebase() {
-        gameStatusEl.textContent = 'Connecting...';
-        if (!firebaseConfig.projectId) {
-            console.error("Firebase config not available. Cannot initialize.");
-            gameStatusEl.textContent = 'Auth Failed';
-            return;
+        // --- Utility Functions ---
+        // Function to show a temporary message box
+        function showMessage(message) {
+            messageContentEl.textContent = message;
+            messageBox.style.display = 'block';
+            setTimeout(() => {
+                messageBox.style.display = 'none';
+            }, 3000);
         }
 
-        const app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
-
-        // Sign in with the provided token if available, otherwise sign in anonymously
-        try {
-            if (initialAuthToken) {
-                await signInWithCustomToken(auth, initialAuthToken);
-            } else {
-                await signInAnonymously(auth);
-            }
-        } catch (error) {
-            console.error("Authentication failed:", error);
-            gameStatusEl.textContent = 'Auth Failed';
-            return;
+        // Check for collision between two rectangles
+        function rectCollision(rect1, rect2) {
+            return rect1.x < rect2.x + rect2.width &&
+                   rect1.x + rect1.width > rect2.x &&
+                   rect1.y < rect2.y + rect2.height &&
+                   rect1.y + rect1.height > rect2.y;
         }
 
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                userId = user.uid;
-                userIdEl.textContent = userId;
-                appIdEl.textContent = appId;
-                gameStatusEl.textContent = 'Authenticated. Select Agent';
-                connectModal.classList.add('active');
-            } else {
-                console.log("User signed out.");
-            }
-        });
-    }
+        // --- Firebase Integration ---
+        // Initializes Firebase and authenticates the user
+        async function initializeFirebase() {
+            try {
+                if (Object.keys(firebaseConfig).length === 0) {
+                    console.error("Firebase config is missing. Check Canvas environment variables.");
+                    gameStatusEl.textContent = 'Auth Failed: No Firebase Config';
+                    showMessage('App failed to initialize. Please check your environment.');
+                    return;
+                }
+                const app = firebase.initializeApp(firebaseConfig);
+                auth = firebase.getAuth(app);
+                db = firebase.getFirestore(app);
 
-    /**
-     * Joins or creates a new game room.
-     */
-    async function joinOrCreateGame() {
-        if (!playerState.agent) {
-            console.log('Please select an agent first!');
-            return;
-        }
-        if (!db || !auth) {
-            console.error("Firebase services not initialized.");
-            gameStatusEl.textContent = 'Initialization Failed';
-            return;
-        }
+                gameStatusEl.textContent = 'Authenticating...';
 
-        loadingSpinner.classList.remove('hidden');
-        joinGameButton.disabled = true;
+                // Use the initial custom auth token if available, otherwise sign in anonymously
+                if (initialAuthToken) {
+                    await firebase.signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await firebase.signInAnonymously(auth);
+                }
 
-        try {
-            gameRoomRef = doc(db, 'artifacts', appId, 'public', 'data', 'game_room');
-
-            // Use a transaction to safely join or create the game
-            await runTransaction(db, async (transaction) => {
-                const gameDoc = await transaction.get(gameRoomRef);
-                const playersPath = `players.${userId}`;
-
-                // Check if a game room exists
-                if (!gameDoc.exists()) {
-                    // Create a new game room with initial state
-                    transaction.set(gameRoomRef, {
-                        gameState: 'lobby',
-                        spike: {
-                            planted: false,
-                            planterId: null,
-                            location: null,
-                            timer: 0,
-                        },
-                        bullets: [],
-                        chat: [],
-                        roundStartTime: Date.now(),
-                        players: {
-                            [userId]: {
-                                name: 'Player_' + userId.substring(0, 5),
-                                x: Math.random() * (mapWidth - 100) + 50,
-                                y: Math.random() * (mapHeight - 100) + 50,
-                                hp: 100,
-                                agent: playerState.agent,
-                                isDead: false,
-                                lastShot: 0,
-                                lastAbility: 0,
-                            }
+                // Wait for the auth state to be ready
+                await new Promise(resolve => {
+                    const unsubscribe = firebase.onAuthStateChanged(auth, user => {
+                        if (user) {
+                            localPlayerId = user.uid;
+                            userIdEl.textContent = localPlayerId;
+                            gameStatusEl.textContent = 'Ready to Join';
+                            appIdEl.textContent = appId;
+                            unsubscribe(); // Stop listening after the first state change
+                            resolve();
                         }
                     });
-                } else {
-                    // Game room exists, add this player
-                    const gameData = gameDoc.data();
-                    const players = gameData.players || {};
-                    players[userId] = {
-                        name: 'Player_' + userId.substring(0, 5),
-                        x: Math.random() * (mapWidth - 100) + 50,
-                        y: Math.random() * (mapHeight - 100) + 50,
-                        hp: 100,
-                        agent: playerState.agent,
-                        isDead: false,
-                        lastShot: 0,
-                        lastAbility: 0,
-                    };
-                    transaction.update(gameRoomRef, { players });
-                }
-            });
-
-            connectModal.classList.remove('active');
-            setupRealtimeListener();
-            isGameRunning = true;
-            startGameLoop();
-        } catch (error) {
-            console.error("Failed to join or create game:", error);
-            gameStatusEl.textContent = 'Join Failed';
-            loadingSpinner.classList.add('hidden');
-            joinGameButton.disabled = false;
-        }
-    }
-
-    /**
-     * Sets up the Firestore real-time listener for the game room.
-     */
-    function setupRealtimeListener() {
-        onSnapshot(gameRoomRef, (doc) => {
-            if (doc.exists()) {
-                gameRoomData = doc.data();
-                updateUI();
-                renderGame();
-                checkGameOver();
-            }
-        });
-    }
-
-    // --- Game Logic Functions ---
-    function updateUI() {
-        // Update player list
-        playerListEl.innerHTML = '';
-        if (gameRoomData && gameRoomData.players) {
-            Object.keys(gameRoomData.players).forEach(pId => {
-                const player = gameRoomData.players[pId];
-                const card = document.createElement('div');
-                card.className = 'player-card';
-                card.innerHTML = `
-                    <p class="font-bold">${player.name}</p>
-                    <p class="text-sm text-gray-400">Agent: ${player.agent}</p>
-                    <p class="text-sm text-gray-400">HP: ${player.hp}</p>
-                `;
-                playerListEl.appendChild(card);
-            });
-        }
-        // Update game status and timer
-        if (gameRoomData) {
-            gameStatusEl.textContent = gameRoomData.gameState;
-            const now = Date.now();
-            const roundTimeLeft = Math.max(0, 90 - Math.floor((now - gameRoomData.roundStartTime) / 1000));
-            roundTimerEl.textContent = `${Math.floor(roundTimeLeft / 60).toString().padStart(2, '0')}:${(roundTimeLeft % 60).toString().padStart(2, '0')}`;
-            
-            // Update spike status
-            if (gameRoomData.spike.planted) {
-                spikeStatusEl.textContent = `Planted (${gameRoomData.spike.timer})`;
-                spikeStatusEl.style.color = '#ff4655';
-            } else {
-                spikeStatusEl.textContent = 'Not Planted';
-                spikeStatusEl.style.color = '#ffffff';
-            }
-        }
-    }
-    
-    function checkGameOver() {
-        if (!gameRoomData) return;
-        const players = gameRoomData.players || {};
-        const alivePlayers = Object.values(players).filter(p => !p.isDead);
-        const teams = { jett: [], sova: [], sage: [] };
-        Object.values(players).forEach(p => teams[p.agent].push(p));
-
-        const attackers = [...teams.jett, ...teams.sova];
-        const defenders = [...teams.sage];
-
-        let gameOverMessage = '';
-        if (gameRoomData.spike.planted) {
-            if (gameRoomData.spike.timer <= 0) {
-                gameOverMessage = 'Spike detonated! Attackers win!';
-            } else if (defenders.every(p => p.isDead)) {
-                gameOverMessage = 'All defenders eliminated! Attackers win!';
-            }
-        } else {
-            if (attackers.every(p => p.isDead)) {
-                gameOverMessage = 'All attackers eliminated! Defenders win!';
-            }
-        }
-        
-        if (gameOverMessage) {
-            endRound(gameOverMessage);
-        }
-    }
-
-    function endRound(message) {
-        isGameRunning = false;
-        cancelAnimationFrame(gameLoopId);
-        document.getElementById('game-over-title').textContent = 'Game Over!';
-        document.getElementById('game-over-text').textContent = message;
-        gameOverModal.classList.add('active');
-    }
-
-    async function startNewRound() {
-        gameOverModal.classList.remove('active');
-        // Reset game state in Firestore
-        try {
-            await updateDoc(gameRoomRef, {
-                gameState: 'playing',
-                spike: {
-                    planted: false,
-                    planterId: null,
-                    location: null,
-                    timer: 0,
-                },
-                bullets: [],
-                chat: [],
-                roundStartTime: Date.now(),
-            });
-            // Reset player states locally and in Firestore
-            for (const pId in gameRoomData.players) {
-                await updateDoc(doc(gameRoomRef, `players.${pId}`), {
-                    x: Math.random() * (mapWidth - 100) + 50,
-                    y: Math.random() * (mapHeight - 100) + 50,
-                    hp: 100,
-                    isDead: false,
                 });
-            }
-            isGameRunning = true;
-            startGameLoop();
-        } catch (error) {
-            console.error("Failed to start new round:", error);
-        }
-    }
-
-    function renderGame() {
-        canvas.width = mapWidth;
-        canvas.height = mapHeight;
-        
-        // Draw map
-        for (let row = 0; row < map.length; row++) {
-            for (let col = 0; col < map[row].length; col++) {
-                ctx.fillStyle = map[row][col] === 0 ? '#2b3547' : (map[row][col] === 2 ? 'rgba(76, 175, 80, 0.2)' : '#1a2233');
-                ctx.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            } catch (error) {
+                console.error('Firebase Auth Error:', error);
+                gameStatusEl.textContent = 'Auth Failed';
+                showMessage('Authentication failed. Please check your internet connection and try again.');
             }
         }
 
-        // Draw players
-        if (gameRoomData && gameRoomData.players) {
-            Object.keys(gameRoomData.players).forEach(pId => {
-                const player = gameRoomData.players[pId];
-                if (!player.isDead) {
-                    ctx.fillStyle = AGENTS[player.agent].color;
-                    ctx.beginPath();
-                    ctx.arc(player.x, player.y, TILE_SIZE / 2, 0, Math.PI * 2);
-                    ctx.fill();
-
-                    // Draw player name
-                    ctx.fillStyle = 'white';
-                    ctx.textAlign = 'center';
-                    ctx.font = '12px Inter';
-                    ctx.fillText(player.name, player.x, player.y - TILE_SIZE / 2 - 5);
-
-                    // Draw HP bar
-                    ctx.fillStyle = 'red';
-                    ctx.fillRect(player.x - TILE_SIZE / 2, player.y + TILE_SIZE / 2 + 5, TILE_SIZE, 5);
-                    ctx.fillStyle = 'green';
-                    ctx.fillRect(player.x - TILE_SIZE / 2, player.y + TILE_SIZE / 2 + 5, TILE_SIZE * (player.hp / 100), 5);
-                }
-            });
-        }
-        
-        // Draw bullets
-        if (gameRoomData && gameRoomData.bullets) {
-            gameRoomData.bullets.forEach(bullet => {
-                ctx.fillStyle = 'yellow';
-                ctx.beginPath();
-                ctx.arc(bullet.x, bullet.y, 3, 0, Math.PI * 2);
-                ctx.fill();
-            });
-        }
-    }
-
-    function checkWallCollision(x, y) {
-        const col = Math.floor(x / TILE_SIZE);
-        const row = Math.floor(y / TILE_SIZE);
-        if (row < 0 || row >= map.length || col < 0 || col >= map[0].length) {
-            return true;
-        }
-        return map[row][col] === 0;
-    }
-
-    async function updateGameLoop() {
-        if (!isGameRunning || !gameRoomData || !gameRoomData.players[userId]) {
-            gameLoopId = requestAnimationFrame(updateGameLoop);
-            return;
-        }
-
-        const now = Date.now();
-        const player = gameRoomData.players[userId];
-        let newX = player.x;
-        let newY = player.y;
-
-        // Player Movement
-        if (keys['w']) newY -= PLAYER_SPEED;
-        if (keys['s']) newY += PLAYER_SPEED;
-        if (keys['a']) newX -= PLAYER_SPEED;
-        if (keys['d']) newX += PLAYER_SPEED;
-
-        // Wall collision check
-        if (!checkWallCollision(newX, newY)) {
-            playerState.x = newX;
-            playerState.y = newY;
-        }
-
-        // Mouse click for shooting
-        if (mouse.clicked && now - mouse.lastShot > FIRE_RATE) {
-            const angle = Math.atan2(mouse.y - playerState.y, mouse.x - playerState.x);
-            const bullet = {
-                x: playerState.x + Math.cos(angle) * TILE_SIZE,
-                y: playerState.y + Math.sin(angle) * TILE_SIZE,
-                vx: Math.cos(angle) * BULLET_SPEED,
-                vy: Math.sin(angle) * BULLET_SPEED,
-                ownerId: userId,
-            };
-            
-            // Add bullet to Firestore
-            await updateDoc(gameRoomRef, {
-                bullets: arrayUnion(bullet)
-            });
-            mouse.lastShot = now;
-        }
-
-        // Handle ability key press
-        if (keys['e'] && now - player.lastAbility > AGENTS[player.agent].abilityCooldown) {
-            await updateDoc(gameRoomRef, {
-                [`players.${userId}.lastAbility`]: now
-            });
-            // Implement ability logic based on agent
-            // (This is a complex part and would need more detail)
-        }
-
-        // Handle spike plant/defuse
-        const col = Math.floor(playerState.x / TILE_SIZE);
-        const row = Math.floor(playerState.y / TILE_SIZE);
-        if (map[row][col] === 2) {
-            plantButton.style.display = 'block';
-            if (keys['p']) {
-                await updateDoc(gameRoomRef, {
-                    'spike.planted': true,
-                    'spike.planterId': userId,
-                    'spike.location': { x: playerState.x, y: playerState.y },
-                    'spike.timer': SPIKE_TIMER_SECONDS,
-                });
+        // Handles joining an existing game or creating a new one if it doesn't exist
+        async function joinOrCreateGame() {
+            if (!db || !auth.currentUser) {
+                console.error("Firebase not initialized or user not authenticated.");
+                gameStatusEl.textContent = 'Join Failed';
+                showMessage('Unable to join game. Authentication is not ready.');
+                return;
             }
-        } else {
-            plantButton.style.display = 'none';
-        }
 
-        // Update spike timer in Firestore
-        if (gameRoomData.spike.planted) {
-            const timeSincePlant = Math.floor((now - gameRoomData.roundStartTime) / 1000);
-            const newTimer = Math.max(0, SPIKE_TIMER_SECONDS - timeSincePlant);
-            await updateDoc(gameRoomRef, {
-                'spike.timer': newTimer,
-            });
-        }
-        
-        // Check for bullet collisions locally and update HP in Firestore
-        if (gameRoomData.bullets && gameRoomData.players) {
-            let bulletsToRemove = [];
-            let hpUpdates = {};
+            const gameRoomRef = firebase.doc(db, 'artifacts', appId, 'public', 'data', 'gameRooms', 'room1');
+            const playerRef = firebase.doc(db, 'artifacts', appId, 'public', 'data', 'players', localPlayerId);
 
-            gameRoomData.bullets.forEach((bullet, index) => {
-                if (bullet.ownerId !== userId) {
-                    const dist = Math.hypot(bullet.x - playerState.x, bullet.y - playerState.y);
-                    if (dist < TILE_SIZE / 2) {
-                        bulletsToRemove.push(bullet);
-                        hpUpdates[userId] = (hpUpdates[userId] || playerState.hp) - 20;
-                    }
-                }
-            });
-            
-            // Update HP and bullets in a single transaction
-            if (Object.keys(hpUpdates).length > 0 || bulletsToRemove.length > 0) {
-                 await runTransaction(db, async (transaction) => {
-                    const gameDoc = await transaction.get(gameRoomRef);
-                    const currentBullets = gameDoc.data().bullets || [];
-                    const updatedBullets = currentBullets.filter(b => !bulletsToRemove.some(br => JSON.stringify(br) === JSON.stringify(b)));
-                    transaction.update(gameRoomRef, { bullets: updatedBullets });
-                    
-                    if (hpUpdates[userId] !== undefined) {
-                        transaction.update(doc(db, 'artifacts', appId, 'public', 'data', 'game_room', `players.${userId}`), { hp: hpUpdates[userId] });
-                    }
-                 });
-            }
-        }
-        
-        // Update player's position in Firestore
-        if (now - lastPlayerUpdate > playerUpdateInterval) {
-            await updateDoc(doc(gameRoomRef, `players.${userId}`), {
-                x: playerState.x,
-                y: playerState.y,
-            });
-            lastPlayerUpdate = now;
-        }
-
-        gameLoopId = requestAnimationFrame(updateGameLoop);
-    }
-    
-    // --- Event Listeners and Setup ---
-    window.addEventListener('keydown', (e) => {
-        keys[e.key.toLowerCase()] = true;
-    });
-
-    window.addEventListener('keyup', (e) => {
-        keys[e.key.toLowerCase()] = false;
-    });
-
-    canvas.addEventListener('mousemove', (e) => {
-        const rect = canvas.getBoundingClientRect();
-        mouse.x = e.clientX - rect.left;
-        mouse.y = e.clientY - rect.top;
-    });
-
-    canvas.addEventListener('mousedown', (e) => {
-        mouse.clicked = true;
-    });
-
-    canvas.addEventListener('mouseup', () => {
-        mouse.clicked = false;
-    });
-
-    // Touch events for mobile
-    canvas.addEventListener('touchstart', (e) => {
-        e.preventDefault();
-        const touch = e.touches[0];
-        const rect = canvas.getBoundingClientRect();
-        mouse.x = touch.clientX - rect.left;
-        mouse.y = touch.clientY - rect.top;
-        mouse.clicked = true;
-    }, { passive: false });
-
-    canvas.addEventListener('touchend', () => {
-        mouse.clicked = false;
-    });
-
-    chatInputEl.addEventListener('keydown', async (e) => {
-        if (e.key === 'Enter' && chatInputEl.value.trim() !== '') {
-            const message = {
-                senderId: userId,
-                senderName: gameRoomData.players[userId].name,
-                text: chatInputEl.value.trim(),
-                timestamp: Date.now(),
-            };
-            await updateDoc(gameRoomRef, { chat: arrayUnion(message) });
-            chatInputEl.value = '';
-        }
-    });
-
-    startNewRoundButton.addEventListener('click', startNewRound);
-
-    // Agent selection
-    agentSelectDiv.addEventListener('click', (e) => {
-        const agentCard = e.target.closest('.agent-card');
-        if (agentCard) {
-            // Remove 'selected' class from all cards
-            document.querySelectorAll('.agent-card').forEach(card => card.classList.remove('selected'));
-            // Add 'selected' class to the clicked card
-            agentCard.classList.add('selected');
-            playerState.agent = agentCard.dataset.agent;
-            joinGameButton.disabled = false;
-        }
-    });
-
-    joinGameButton.addEventListener('click', joinOrCreateGame);
-
-    window.onbeforeunload = async () => {
-        if (userId && gameRoomRef) {
             try {
-                // Remove the player from the game room upon leaving
-                await runTransaction(db, async (transaction) => {
-                    const gameDoc = await transaction.get(gameRoomRef);
-                    if (gameDoc.exists()) {
-                        const players = gameDoc.data().players;
-                        delete players[userId];
+                // Use a transaction to safely update the player list
+                await firebase.runTransaction(db, async (transaction) => {
+                    const gameRoomDoc = await transaction.get(gameRoomRef);
+
+                    const playerState = {
+                        x: Math.random() * mapWidth,
+                        y: Math.random() * mapHeight,
+                        color: '#' + Math.floor(Math.random()*16777215).toString(16),
+                        agent: localPlayerAgent,
+                        angle: 0,
+                        lastShot: 0,
+                    };
+                    
+                    // Create the player document
+                    transaction.set(playerRef, playerState);
+
+                    // Update the game room to indicate the player has joined
+                    if (!gameRoomDoc.exists()) {
+                        transaction.set(gameRoomRef, {
+                            players: { [localPlayerId]: true },
+                            createdAt: Date.now(),
+                            map: 'ascent'
+                        });
+                    } else {
+                        const players = gameRoomDoc.data().players || {};
+                        players[localPlayerId] = true;
                         transaction.update(gameRoomRef, { players });
                     }
                 });
-            } catch (e) {
-                console.error("Failed to remove player on unload:", e);
+
+                console.log("Successfully joined/created game room.");
+                welcomeModal.style.display = 'none';
+                gameStatusEl.textContent = 'In Game';
+                setupGameListeners();
+            } catch (error) {
+                console.error('Transaction failed: ', error);
+                gameStatusEl.textContent = 'Join Failed';
+                showMessage('Failed to join game. Please check your connection and refresh.');
             }
         }
-    };
-    
-    // Initial setup
-    initFirebase();
-</script>
+
+        // Sets up real-time listeners for game state changes in Firestore
+        function setupGameListeners() {
+            // Listen for player updates
+            firebase.onSnapshot(firebase.collection(db, 'artifacts', appId, 'public', 'data', 'players'), (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    const playerId = change.doc.id;
+                    const data = change.doc.data();
+                    if (change.type === 'added' || change.type === 'modified') {
+                        gameState.players[playerId] = { ...data, id: playerId };
+                    } else if (change.type === 'removed') {
+                        delete gameState.players[playerId];
+                    }
+                });
+                updatePlayerListUI();
+            });
+
+            // Listen for bullet updates
+            firebase.onSnapshot(firebase.collection(db, 'artifacts', appId, 'public', 'data', 'bullets'), (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    const bulletId = change.doc.id;
+                    const data = change.doc.data();
+                    if (change.type === 'added') {
+                        gameState.bullets[bulletId] = { ...data, id: bulletId };
+                    } else if (change.type === 'removed') {
+                        delete gameState.bullets[bulletId];
+                    }
+                });
+            });
+        }
+
+        // Updates the player list UI element
+        function updatePlayerListUI() {
+            playerListEl.innerHTML = '';
+            for (const playerId in gameState.players) {
+                const player = gameState.players[playerId];
+                const listItem = document.createElement('li');
+                listItem.textContent = `${player.agent} (${playerId.substring(0, 5)})`;
+                if (playerId === localPlayerId) {
+                    listItem.classList.add('font-bold', 'text-green-500');
+                }
+                playerListEl.appendChild(listItem);
+            }
+        }
+
+        // --- Game Logic ---
+        function updateGame() {
+            const now = Date.now();
+            const elapsed = now - lastUpdateTime;
+            if (elapsed < updateInterval) return;
+            lastUpdateTime = now;
+
+            const playerState = gameState.players[localPlayerId];
+            if (!playerState) return;
+
+            const newPos = { x: playerState.x, y: playerState.y };
+
+            // Handle player movement based on keys
+            if (keys['KeyW']) newPos.y -= playerSpeed;
+            if (keys['KeyS']) newPos.y += playerSpeed;
+            if (keys['KeyA']) newPos.x -= playerSpeed;
+            if (keys['KeyD']) newPos.x += playerSpeed;
+
+            // Check for collisions with walls before updating position
+            const playerRect = { x: newPos.x, y: newPos.y, width: playerSize, height: playerSize };
+            let collision = false;
+            for (const wall of walls) {
+                if (rectCollision(playerRect, wall)) {
+                    collision = true;
+                    break;
+                }
+            }
+
+            if (!collision) {
+                playerState.x = newPos.x;
+                playerState.y = newPos.y;
+            }
+
+            // Handle shooting
+            if (mouse.clicked && now - playerState.lastShot > 500) {
+                const bulletRef = firebase.doc(firebase.collection(db, 'artifacts', appId, 'public', 'data', 'bullets'));
+                const bulletState = {
+                    x: playerState.x + playerSize / 2,
+                    y: playerState.y + playerSize / 2,
+                    angle: playerState.angle,
+                    shooterId: localPlayerId,
+                };
+                firebase.setDoc(bulletRef, bulletState);
+                playerState.lastShot = now;
+            }
+
+            // Update local player state in the database
+            const localPlayerRef = firebase.doc(db, 'artifacts', appId, 'public', 'data', 'players', localPlayerId);
+            firebase.setDoc(localPlayerRef, playerState);
+
+            // Update bullet positions and check for collisions
+            for (const bulletId in gameState.bullets) {
+                const bullet = gameState.bullets[bulletId];
+                bullet.x += Math.cos(bullet.angle) * bulletSpeed;
+                bullet.y += Math.sin(bullet.angle) * bulletSpeed;
+
+                // Check for bullet-wall collisions
+                const bulletRect = { x: bullet.x, y: bullet.y, width: 5, height: 5 };
+                let bulletCollision = false;
+                for (const wall of walls) {
+                    if (rectCollision(bulletRect, wall)) {
+                        bulletCollision = true;
+                        break;
+                    }
+                }
+
+                // Check for bullet-player collisions (don't hit self)
+                if (!bulletCollision && bullet.shooterId !== localPlayerId) {
+                    const targetPlayer = gameState.players[localPlayerId];
+                    if (targetPlayer) {
+                        const targetRect = { x: targetPlayer.x, y: targetPlayer.y, width: playerSize, height: playerSize };
+                        if (rectCollision(bulletRect, targetRect)) {
+                            // Hit logic here (e.g., reduce health)
+                            console.log(`Player ${localPlayerId} was hit by a bullet from ${bullet.shooterId}!`);
+                            // For this version, we will just remove the bullet
+                            bulletCollision = true;
+                        }
+                    }
+                }
+
+                // Remove bullet from database if it collides with a wall or hits a player
+                if (bulletCollision) {
+                    const bulletRef = firebase.doc(db, 'artifacts', appId, 'public', 'data', 'bullets', bulletId);
+                    firebase.deleteDoc(bulletRef);
+                }
+            }
+        }
+
+        // Main game loop function
+        function drawGame() {
+            ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+            
+            // Draw walls
+            ctx.fillStyle = '#444';
+            walls.forEach(wall => {
+                ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+            });
+
+            // Draw players
+            for (const playerId in gameState.players) {
+                const player = gameState.players[playerId];
+                ctx.fillStyle = player.color;
+                ctx.fillRect(player.x, player.y, playerSize, playerSize);
+            }
+
+            // Draw bullets
+            for (const bulletId in gameState.bullets) {
+                const bullet = gameState.bullets[bulletId];
+                ctx.fillStyle = 'red';
+                ctx.beginPath();
+                ctx.arc(bullet.x, bullet.y, 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Update the game state (player movement, shooting, etc.)
+            updateGame();
+            requestAnimationFrame(drawGame);
+        }
+
+        // --- Event Listeners and Setup ---
+        // Resize canvas to fit the screen
+        function resizeCanvas() {
+            if (window.innerWidth >= 768) {
+                gameCanvas.width = mapWidth;
+                gameCanvas.height = mapHeight;
+            } else {
+                const size = Math.min(window.innerWidth * 0.9, window.innerHeight * 0.5);
+                gameCanvas.width = size;
+                gameCanvas.height = size * (mapHeight / mapWidth);
+            }
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        // Keyboard input handling
+        document.addEventListener('keydown', (e) => keys[e.code] = true);
+        document.addEventListener('keyup', (e) => keys[e.code] = false);
+
+        // Mouse input handling
+        gameCanvas.addEventListener('mousedown', (e) => {
+            const rect = gameCanvas.getBoundingClientRect();
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+            mouse.clicked = true;
+            const dx = (e.clientX - rect.left) - gameState.players[localPlayerId].x;
+            const dy = (e.clientY - rect.top) - gameState.players[localPlayerId].y;
+            gameState.players[localPlayerId].angle = Math.atan2(dy, dx);
+        });
+        gameCanvas.addEventListener('mouseup', () => mouse.clicked = false);
+        gameCanvas.addEventListener('mousemove', (e) => {
+            if (!gameState.players[localPlayerId]) return;
+            const rect = gameCanvas.getBoundingClientRect();
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+            const dx = (e.clientX - rect.left) - gameState.players[localPlayerId].x;
+            const dy = (e.clientY - rect.top) - gameState.players[localPlayerId].y;
+            gameState.players[localPlayerId].angle = Math.atan2(dy, dx);
+        });
+
+        // Touch input handling for mobile
+        gameCanvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = gameCanvas.getBoundingClientRect();
+            mouse.x = touch.clientX;
+            mouse.y = touch.clientY;
+            mouse.clicked = true;
+            if (gameState.players[localPlayerId]) {
+                const dx = (touch.clientX - rect.left) - gameState.players[localPlayerId].x;
+                const dy = (touch.clientY - rect.top) - gameState.players[localPlayerId].y;
+                gameState.players[localPlayerId].angle = Math.atan2(dy, dx);
+            }
+        }, { passive: false });
+        gameCanvas.addEventListener('touchend', () => mouse.clicked = false);
+        gameCanvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = gameCanvas.getBoundingClientRect();
+            mouse.x = touch.clientX;
+            mouse.y = touch.clientY;
+            if (gameState.players[localPlayerId]) {
+                const dx = (touch.clientX - rect.left) - gameState.players[localPlayerId].x;
+                const dy = (touch.clientY - rect.top) - gameState.players[localPlayerId].y;
+                gameState.players[localPlayerId].angle = Math.atan2(dy, dx);
+            }
+        }, { passive: false });
+
+        // Agent selection logic
+        document.querySelectorAll('[data-agent]').forEach(agentEl => {
+            agentEl.addEventListener('click', () => {
+                // Remove selected class from all agents
+                document.querySelectorAll('[data-agent]').forEach(el => el.classList.remove('bg-gray-700', 'p-2', 'rounded-md'));
+                // Add selected class to the clicked agent
+                agentEl.classList.add('bg-gray-700', 'p-2', 'rounded-md');
+                localPlayerAgent = agentEl.getAttribute('data-agent');
+            });
+        });
+
+        // Join button event listener
+        joinButton.addEventListener('click', () => {
+            joinOrCreateGame();
+        });
+
+        // --- Game Entry Point ---
+        window.onload = function() {
+            resizeCanvas();
+            initializeFirebase();
+            drawGame();
+        }
+    </script>
 </body>
 </html>
