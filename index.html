@@ -134,11 +134,18 @@
     </main>
 
     <script type="module">
-        // Global variables for Firebase services, automatically provided by the Canvas environment.
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        
+        // Hard-coded Firebase configuration and custom auth token
+        const firebaseConfig = {
+            apiKey: "AIzaSyAkPgNjaa28cKgbwDAByg0RfSHvuSvC1d8",
+            authDomain: "valo2d.firebaseapp.com",
+            projectId: "valo2d",
+            storageBucket: "valo2d.firebasestorage.app",
+            messagingSenderId: "807697574241",
+            appId: "1:807697574241:web:066e47b0e6652f55783d20",
+            measurementId: "G-JN6KXYHLYK"
+        };
+        const initialAuthToken = "YOUR_AUTH_TOKEN_HERE"; // Placeholder for the custom auth token
+
         // Game-related constants
         const mapWidth = 1024;
         const mapHeight = 768;
@@ -207,20 +214,14 @@
         // Initializes Firebase and authenticates the user
         async function initializeFirebase() {
             try {
-                if (Object.keys(firebaseConfig).length === 0) {
-                    console.error("Firebase config is missing. Check Canvas environment variables.");
-                    gameStatusEl.textContent = 'Auth Failed: No Firebase Config';
-                    showMessage('App failed to initialize. Please check your environment.');
-                    return;
-                }
                 const app = firebase.initializeApp(firebaseConfig);
                 auth = firebase.getAuth(app);
                 db = firebase.getFirestore(app);
 
                 gameStatusEl.textContent = 'Authenticating...';
-
+                
                 // Use the initial custom auth token if available, otherwise sign in anonymously
-                if (initialAuthToken) {
+                if (initialAuthToken && initialAuthToken !== "YOUR_AUTH_TOKEN_HERE") {
                     await firebase.signInWithCustomToken(auth, initialAuthToken);
                 } else {
                     await firebase.signInAnonymously(auth);
@@ -233,7 +234,7 @@
                             localPlayerId = user.uid;
                             userIdEl.textContent = localPlayerId;
                             gameStatusEl.textContent = 'Ready to Join';
-                            appIdEl.textContent = appId;
+                            appIdEl.textContent = firebaseConfig.appId;
                             unsubscribe(); // Stop listening after the first state change
                             resolve();
                         }
@@ -255,8 +256,8 @@
                 return;
             }
 
-            const gameRoomRef = firebase.doc(db, 'artifacts', appId, 'public', 'data', 'gameRooms', 'room1');
-            const playerRef = firebase.doc(db, 'artifacts', appId, 'public', 'data', 'players', localPlayerId);
+            const gameRoomRef = firebase.doc(db, 'artifacts', firebaseConfig.appId, 'public', 'data', 'gameRooms', 'room1');
+            const playerRef = firebase.doc(db, 'artifacts', firebaseConfig.appId, 'public', 'data', 'players', localPlayerId);
 
             try {
                 // Use a transaction to safely update the player list
@@ -303,7 +304,7 @@
         // Sets up real-time listeners for game state changes in Firestore
         function setupGameListeners() {
             // Listen for player updates
-            firebase.onSnapshot(firebase.collection(db, 'artifacts', appId, 'public', 'data', 'players'), (snapshot) => {
+            firebase.onSnapshot(firebase.collection(db, 'artifacts', firebaseConfig.appId, 'public', 'data', 'players'), (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     const playerId = change.doc.id;
                     const data = change.doc.data();
@@ -317,7 +318,7 @@
             });
 
             // Listen for bullet updates
-            firebase.onSnapshot(firebase.collection(db, 'artifacts', appId, 'public', 'data', 'bullets'), (snapshot) => {
+            firebase.onSnapshot(firebase.collection(db, 'artifacts', firebaseConfig.appId, 'public', 'data', 'bullets'), (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
                     const bulletId = change.doc.id;
                     const data = change.doc.data();
@@ -379,7 +380,7 @@
 
             // Handle shooting
             if (mouse.clicked && now - playerState.lastShot > 500) {
-                const bulletRef = firebase.doc(firebase.collection(db, 'artifacts', appId, 'public', 'data', 'bullets'));
+                const bulletRef = firebase.doc(firebase.collection(db, 'artifacts', firebaseConfig.appId, 'public', 'data', 'bullets'));
                 const bulletState = {
                     x: playerState.x + playerSize / 2,
                     y: playerState.y + playerSize / 2,
@@ -391,7 +392,7 @@
             }
 
             // Update local player state in the database
-            const localPlayerRef = firebase.doc(db, 'artifacts', appId, 'public', 'data', 'players', localPlayerId);
+            const localPlayerRef = firebase.doc(db, 'artifacts', firebaseConfig.appId, 'public', 'data', 'players', localPlayerId);
             firebase.setDoc(localPlayerRef, playerState);
 
             // Update bullet positions and check for collisions
@@ -426,7 +427,7 @@
 
                 // Remove bullet from database if it collides with a wall or hits a player
                 if (bulletCollision) {
-                    const bulletRef = firebase.doc(db, 'artifacts', appId, 'public', 'data', 'bullets', bulletId);
+                    const bulletRef = firebase.doc(db, 'artifacts', firebaseConfig.appId, 'public', 'data', 'bullets', bulletId);
                     firebase.deleteDoc(bulletRef);
                 }
             }
