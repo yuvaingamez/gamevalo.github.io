@@ -196,17 +196,25 @@
         }
 
         // --- Firebase Integration ---
-        // Initializes Firebase and authenticates the user
+        // Initializes Firebase and authenticates the user for a self-hosted environment
         async function initializeFirebase() {
             try {
-                // Get the Canvas-provided Firebase configuration and auth token
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const firebaseConfig = JSON.parse(__firebase_config);
-                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+                // IMPORTANT: Replace this with your own Firebase project configuration.
+                // You can find this in your Firebase console under Project settings -> General.
+                const firebaseConfig = {
+                    apiKey: "AIzaSyDuDJAA5XCKSHcZJu3VRopCp9NpHvZR0Q0",
+                    authDomain: "val2do.firebaseapp.com",
+                    projectId: "val2do",
+                    storageBucket: "val2do.firebasestorage.app",
+                    messagingSenderId: "381572810948",
+                    appId: "1:381572810948:web:6c2ceb2e4736753d1d2191"
 
-                // Log values for debugging
-                console.log("Firebase config:", firebaseConfig);
-                console.log("Initial auth token:", initialAuthToken ? "exists" : "does not exist");
+                };
+
+                // Define a hardcoded app ID for the game. This will be the name of your game room.
+                const appId = 'my-valorant-2d-game';
+                
+                console.log("Using hardcoded Firebase configuration and game ID.");
 
                 const app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
@@ -214,28 +222,16 @@
 
                 gameStatusEl.textContent = 'Authenticating...';
                 
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
+                // Use anonymous sign-in, which is simple and requires no user input.
+                const userCredential = await signInAnonymously(auth);
+                const user = userCredential.user;
 
-                // Wait for the auth state to be ready
-                await new Promise(resolve => {
-                    const unsubscribe = onAuthStateChanged(auth, user => {
-                        if (user) {
-                            localPlayerId = user.uid;
-                            userIdEl.textContent = localPlayerId;
-                            gameStatusEl.textContent = 'Ready to Join';
-                            appIdEl.textContent = appId;
-                            console.log("Authenticated with user ID:", localPlayerId);
-                            unsubscribe(); // Stop listening after the first state change
-                            resolve();
-                        } else {
-                            console.log("Authentication state changed, but no user is signed in.");
-                        }
-                    });
-                });
+                localPlayerId = user.uid;
+                userIdEl.textContent = localPlayerId;
+                gameStatusEl.textContent = 'Ready to Join';
+                appIdEl.textContent = appId;
+                console.log("Authenticated anonymously with user ID:", localPlayerId);
+
             } catch (error) {
                 console.error('Firebase Auth Error:', error);
                 gameStatusEl.textContent = 'Auth Failed';
@@ -252,7 +248,7 @@
                 return;
             }
 
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const appId = 'my-valorant-2d-game'; // Using the hardcoded app ID
             const gameRoomRef = doc(db, 'artifacts', appId, 'public', 'data', 'gameRooms', 'room1');
             const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', localPlayerId);
 
@@ -300,7 +296,7 @@
 
         // Sets up real-time listeners for game state changes in Firestore
         function setupGameListeners() {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const appId = 'my-valorant-2d-game'; // Using the hardcoded app ID
             // Listen for player updates
             onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'players'), (snapshot) => {
                 snapshot.docChanges().forEach((change) => {
@@ -378,7 +374,7 @@
 
             // Handle shooting
             if (mouse.clicked && now - playerState.lastShot > 500) {
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                const appId = 'my-valorant-2d-game'; // Using the hardcoded app ID
                 const bulletRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'bullets'));
                 const bulletState = {
                     x: playerState.x + playerSize / 2,
@@ -391,7 +387,7 @@
             }
 
             // Update local player state in the database
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const appId = 'my-valorant-2d-game'; // Using the hardcoded app ID
             const localPlayerRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', localPlayerId);
             setDoc(localPlayerRef, playerState);
 
@@ -427,7 +423,7 @@
 
                 // Remove bullet from database if it collides with a wall or hits a player
                 if (bulletCollision) {
-                    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                    const appId = 'my-valorant-2d-game'; // Using the hardcoded app ID
                     const bulletRef = doc(db, 'artifacts', appId, 'public', 'data', 'bullets', bulletId);
                     deleteDoc(bulletRef);
                 }
