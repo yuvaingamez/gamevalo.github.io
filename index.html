@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Valorant 2D: The Ascent</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase SDK Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, runTransaction, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        window.firebase = { initializeApp, getAuth, signInWithCustomToken, onAuthStateChanged, signInAnonymously, getFirestore, doc, getDoc, setDoc, onSnapshot, collection, runTransaction, query, getDocs };
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d121c;
+            color: #ffffff;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+
+        .game-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            gap: 1rem;
+            padding: 1rem;
+        }
+
+        .main-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            width: 100%;
+            max-width: 1200px;
+        }
+
+        .top-ui {
+            background-color: #1a2233;
+            border: 2px solid #2b3547;
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        canvas {
+            background-color: #1a2233;
+            border: 2px solid #ff4655;
+            box-shadow: 0 0 20px rgba(255, 70, 85, 0.5), 0 0 10px rgba(255, 70, 85, 0.5) inset;
+            border-radius: 12px;
+            touch-action: none;
+        }
+
+        .player-info-container {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .player-card {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        
+        .chat-panel {
+            background-color: #1a2233;
+            border: 2px solid #2b3547;
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            height: 200px;
+        }
+        
+        .chat-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            border-bottom: 1px solid #2b3547;
+            padding-bottom: 0.5rem;
+        }
+        
+        .chat-input {
+            background-color: #2b3547;
+            border: none;
+            padding: 0.5rem;
+            border-radius: 8px;
+            color: white;
+        }
+
+        .modal {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+            display: none;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background-color: #1a2233;
+            border: 2px solid #ff4655;
+            border-radius: 12px;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            width: 90%;
+            max-width: 500px;
+            text-align: center;
+        }
+        
+        .button {
+            background-color: #ff4655;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(255, 70, 85, 0.3);
+            border: none;
+        }
+        
+        .button:hover {
+            background-color: #e63e4c;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 15px rgba(255, 70, 85, 0.5);
+        }
+
+        .agent-select {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .agent-card {
+            background-color: #2b3547;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            padding: 1rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+
+        .agent-card:hover {
+            border-color: #ff4655;
+        }
+
+        .agent-card.selected {
+            border-color: #4CAF50;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+        }
+
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: #ff4655;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive Layouts */
+        @media (min-width: 768px) {
+            .game-wrapper {
+                flex-direction: row;
+                align-items: stretch;
+            }
+            .main-panel {
+                display: flex;
+                flex-direction: row;
+                align-items: stretch;
+            }
+            .top-ui {
+                display: flex;
+                flex-direction: column;
+                justify-content: flex-start;
+                width: 250px;
+            }
+            .chat-panel {
+                height: auto;
+            }
+            canvas {
+                flex-grow: 1;
+                max-width: 900px;
+                max-height: 600px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-[#0d121c] text-white">
+
+    <div class="game-wrapper">
+        <div class="main-panel">
+            <!-- Left Side UI Panel -->
+            <div class="top-ui">
+                <h1 class="text-3xl font-bold text-center w-full mb-4">VALORANT 2D</h1>
+                <div id="status-panel" class="w-full text-center text-gray-400 text-sm">
+                    <p>Status: <span id="game-status">Connecting...</span></p>
+                    <p>Your ID: <span id="user-id">Loading...</span></p>
+                    <p>Game ID: <span id="app-id"></span></p>
+                    <p>Round Time: <span id="round-timer">--:--</span></p>
+                    <p>Spike: <span id="spike-status">Not Planted</span></p>
+                </div>
+
+                <div class="w-full mt-4">
+                    <h2 class="text-lg font-semibold mb-2">Players</h2>
+                    <div id="player-list" class="player-info-container">
+                        <!-- Player cards will be injected here -->
+                    </div>
+                </div>
+                
+                <div class="w-full mt-4">
+                    <h2 class="text-lg font-semibold mb-2">Chat</h2>
+                    <div class="chat-panel">
+                        <div id="chat-messages" class="chat-messages"></div>
+                        <input type="text" id="chat-input" class="chat-input" placeholder="Type a message...">
+                    </div>
+                </div>
+
+            </div>
+            
+            <!-- Game Canvas -->
+            <canvas id="gameCanvas"></canvas>
+            
+            <!-- Mobile Controls -->
+            <div class="md:hidden w-full flex justify-center gap-4 mt-4">
+                <button id="plant-button" class="button">Plant</button>
+                <button id="defuse-button" class="button">Defuse</button>
+                <button id="ability-button" class="button">Ability</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modals -->
+    <div id="connect-modal" class="modal active">
+        <div class="modal-content">
+            <h2 class="text-2xl font-bold">Welcome to Valorant 2D</h2>
+            <p>Select your agent to join or create a game. Share the App ID with friends to play together.</p>
+            <div id="agent-select" class="agent-select">
+                <div class="agent-card" data-agent="jett">
+                    <p class="font-bold">Jett</p>
+                    <p class="text-sm text-gray-400">Dash (E)</p>
+                </div>
+                <div class="agent-card" data-agent="sova">
+                    <p class="font-bold">Sova</p>
+                    <p class="text-sm text-gray-400">Recon Dart (E)</p>
+                </div>
+                <div class="agent-card" data-agent="sage">
+                    <p class="font-bold">Sage</p>
+                    <p class="text-sm text-gray-400">Barrier Orb (E)</p>
+                </div>
+            </div>
+            <button id="join-game-button" class="button mt-4" disabled>Join Game</button>
+            <div id="loading-spinner" class="spinner hidden"></div>
+        </div>
+    </div>
+
+    <div id="game-over-modal" class="modal">
+        <div class="modal-content">
+            <h2 id="game-over-title" class="text-2xl font-bold">Game Over!</h2>
+            <p id="game-over-text">The Spike was planted and detonated!</p>
+            <button id="start-new-round" class="button">Start New Round</button>
+        </div>
+    </div>
+
+<script type="module">
+    // Firebase service initialization
+    const { initializeApp, getAuth, signInWithCustomToken, onAuthStateChanged, signInAnonymously, getFirestore, doc, getDoc, setDoc, onSnapshot, collection, runTransaction, query, getDocs } = window.firebase;
+
+    // Global variables from Canvas environment
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+    // UI Elements
+    const connectModal = document.getElementById('connect-modal');
+    const gameOverModal = document.getElementById('game-over-modal');
+    const joinGameButton = document.getElementById('join-game-button');
+    const agentSelectDiv = document.getElementById('agent-select');
+    const gameStatusEl = document.getElementById('game-status');
+    const userIdEl = document.getElementById('user-id');
+    const appIdEl = document.getElementById('app-id');
+    const playerListEl = document.getElementById('player-list');
+    const chatMessagesEl = document.getElementById('chat-messages');
+    const chatInputEl = document.getElementById('chat-input');
+    const loadingSpinner = document.getElementById('loading-spinner');
+    const roundTimerEl = document.getElementById('round-timer');
+    const spikeStatusEl = document.getElementById('spike-status');
+    const plantButton = document.getElementById('plant-button');
+    const defuseButton = document.getElementById('defuse-button');
+    const abilityButton = document.getElementById('ability-button');
+    const startNewRoundButton = document.getElementById('start-new-round');
+
+    // Canvas and Context
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Game State & Constants
+    const TILE_SIZE = 40;
+    const PLAYER_SPEED = 2;
+    const BULLET_SPEED = 15;
+    const FIRE_RATE = 100; // milliseconds
+    const SPIKE_TIMER_SECONDS = 40;
+    
+    // Map data: 0 = wall, 1 = empty space, 2 = spike zone
+    const map = [
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 2, 2, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 2, 2, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+        [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    ];
+    const mapWidth = map[0].length * TILE_SIZE;
+    const mapHeight = map.length * TILE_SIZE;
+
+    // Agent data
+    const AGENTS = {
+        jett: { color: '#87CEEB', ability: 'dash', abilityCooldown: 5000 },
+        sova: { color: '#008080', ability: 'recon', abilityCooldown: 10000 },
+        sage: { color: '#00FA9A', ability: 'wall', abilityCooldown: 8000 },
+    };
+    
+    // Game variables
+    let db, auth;
+    let userId;
+    let gameRoomRef;
+    let gameRoomData;
+    let playerState = {
+        x: 100,
+        y: 100,
+        hp: 100,
+        agent: null,
+        bullets: [],
+        ability: { lastUsed: 0 },
+        isDead: false,
+    };
+    let keys = {};
+    let mouse = { x: 0, y: 0, clicked: false, lastShot: 0 };
+    let animations = {};
+    
+    // Game loops
+    let gameLoopInterval, spikeTimerInterval;
+
+    // --- Firebase & Game Initialization ---
+
+    /**
+     * Authenticates the user and initializes the Firebase services.
+     */
+    async function initFirebase() {
+        if (!firebaseConfig.projectId) {
+            console.error("Firebase config not available. Cannot initialize.");
+            gameStatusEl.textContent = 'Auth Failed';
+            return;
+        }
+        
+        const app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+
+        try {
+            if (initialAuthToken) {
+                await signInWithCustomToken(auth, initialAuthToken);
+            } else {
+                await signInAnonymously(auth);
+            }
+        } catch (error) {
+            console.error("Authentication failed:", error);
+            gameStatusEl.textContent = 'Auth Failed';
+            return;
+        }
+        
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                userId = user.uid;
+                userIdEl.textContent = userId;
+                appIdEl.textContent = appId;
+                gameStatusEl.textContent = 'Select Agent';
+                connectModal.classList.add('active');
+            } else {
+                console.log("User signed out.");
+            }
+        });
+    }
+
+    /**
+     * Joins or creates a new game room.
+     */
+    async function joinOrCreateGame() {
+        if (!playerState.agent) {
+            alert('Please select an agent first!');
+            return;
+        }
+
+        loadingSpinner.classList.remove('hidden');
+        joinGameButton.disabled = true;
+
+        try {
+            gameRoomRef = doc(db, 'artifacts', appId, 'public', 'data', 'game_room');
+
+            await runTransaction(db, async (transaction) => {
+                const gameDoc = await transaction.get(gameRoomRef);
+                const gameData = gameDoc.exists() ? gameDoc.data() : {};
+                
+                // Initialize game data if it doesn't exist
+                if (!gameDoc.exists()) {
+                    transaction.set(gameRoomRef, {
+                        players: {},
+                        gameState: 'lobby',
+                        spike: {
+                            planted: false,
+                            planterId: null,
+                            defuserId: null,
+                            location: null,
+                            timer: 0,
+                        },
+                        bullets: [],
+                        abilities: [],
+                        chat: [],
+                        roundStartTime: Date.now(),
+                    });
+                }
+                
+                // Add the current player to the game state
+                const players = gameData.players || {};
+                players[userId] = {
+                    x: Math.random() * (mapWidth - 100) + 50,
+                    y: Math.random() * (mapHeight - 100) + 50,
+                    hp: 100,
+                    agent: playerState.agent,
+                    lastShot: 0,
+                    lastAbility: 0,
+                    isDead: false,
+                };
+                transaction.update(gameRoomRef, { players });
+            });
+            
+            connectModal.classList.remove('active');
+            setupRealtimeListener();
+            startGameLoop();
+        } catch (error) {
+            console.error("Failed to join game:", error);
+            gameStatusEl.textContent = 'Join Failed';
+            loadingSpinner.classList.add('hidden');
+            joinGameButton.disabled = false;
+        }
+    }
+
+    /**
+     * Sets up the Firestore real-time listener for the game room.
+     */
+    function setupRealtimeListener() {
+        onSnapshot(gameRoomRef, (doc) => {
+            if (doc.exists()) {
+                gameRoomData = doc.data();
+                updateUI();
+                renderGame();
+                
+                // Check for game over conditions
+                const players = gameRoomData.players || {};
+                const alivePlayers = Object.values(players).filter(p => !p.isDead);
+                const teams = { Jett: [], Sova: [], Sage: [] };
+                Object.values(players).forEach(p => teams[p.agent].push(p));
+                
+                if (gameRoomData.spike.planted) {
+                    // Check if spike detonated
+                    if (gameRoomData.spike.timer <= 0) {
+                        endRound('Spike has detonated!');
+                    }
+                    // Check if attackers are all dead
+                    if (teams.Jett.every(p => p.isDead)) {
+                         endRound('Defenders win! Attackers are all dead.');
+                    }
+                } else {
+                    // Check if all players on one side are dead
+                    if (alivePlayers.length > 0) {
+                       const uniqueAgents = new Set(alivePlayers.map(p => p.agent));
+                       if(uniqueAgents.size === 1) {
+                           endRound(`${uniqueAgents.values().next().value} team wins!`);
+                       }
+                    }
+                }
+                
+            }
+        });
+    }
+
+    /**
+     * Updates the game state in Firestore.
+     * @param {Object} data The data to update in the Firestore document.
+     */
+    async function updateFirestoreState(data) {
+        if (!db || !userId) return;
+        try {
+            await setDoc(gameRoomRef, data, { merge: true });
+        } catch (e) {
+            console.error("Error updating Firestore:", e);
+        }
+    }
+    
+    /**
+     * Resets the game state for a new round.
+     */
+    async function resetGame() {
+         try {
+            await setDoc(gameRoomRef, {
+                players: {}, // This will be repopulated by players on reconnect/join
+                gameState: 'lobby',
+                spike: {
+                    planted: false,
+                    planterId: null,
+                    defuserId: null,
+                    location: null,
+                    timer: 0,
+                },
+                bullets: [],
+                abilities: [],
+                chat: [],
+                roundStartTime: Date.now(),
+            });
+            gameOverModal.classList.remove('active');
+            initGame();
+        } catch (e) {
+            console.error("Error resetting game:", e);
+        }
+    }
+
+    // --- Game Logic and Rendering ---
+
+    /**
+     * The main game loop for local state updates and drawing.
+     */
+    function startGameLoop() {
+        gameLoopInterval = setInterval(() => {
+            // Only update self's position and actions
+            if (gameRoomData?.players?.[userId] && gameRoomData.gameState !== 'game_over') {
+                handleInput();
+                updatePlayerPosition();
+                updateBullets();
+                updateAbilities();
+                
+                // Write local state to Firestore
+                updateFirestoreState({
+                    players: {
+                        [userId]: {
+                            ...gameRoomData.players[userId],
+                            x: playerState.x,
+                            y: playerState.y,
+                            isDead: playerState.isDead,
+                        }
+                    },
+                    bullets: [...gameRoomData.bullets, ...playerState.bullets],
+                    abilities: [...gameRoomData.abilities, ...Object.values(animations)],
+                });
+            }
+        }, 1000 / 60); // 60 FPS
+    }
+    
+    /**
+     * Handles keyboard and mouse input.
+     */
+    function handleInput() {
+        if (playerState.isDead) return;
+
+        const p = gameRoomData.players[userId];
+        let newX = p.x;
+        let newY = p.y;
+        
+        // WASD movement
+        if (keys['w']) newY -= PLAYER_SPEED;
+        if (keys['s']) newY += PLAYER_SPEED;
+        if (keys['a']) newX -= PLAYER_SPEED;
+        if (keys['d']) newX += PLAYER_SPEED;
+        
+        // Prevent player from moving into walls
+        if (!isCollidingWithWall(newX, p.y)) {
+            playerState.x = newX;
+        }
+        if (!isCollidingWithWall(p.x, newY)) {
+            playerState.y = newY;
+        }
+
+        // Mouse aiming
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = mouse.x - rect.left;
+        const mouseY = mouse.y - rect.top;
+        const dx = mouseX - playerState.x;
+        const dy = mouseY - playerState.y;
+        playerState.angle = Math.atan2(dy, dx);
+        
+        // Shooting
+        if (mouse.clicked && Date.now() - mouse.lastShot > FIRE_RATE) {
+            playerState.bullets.push({
+                x: playerState.x,
+                y: playerState.y,
+                angle: playerState.angle,
+                ownerId: userId,
+            });
+            mouse.lastShot = Date.now();
+        }
+    }
+    
+    /**
+     * Plants the spike.
+     */
+    async function plantSpike() {
+         if (isInsideSpikeZone(playerState.x, playerState.y) && !gameRoomData.spike.planted) {
+            // Only allow planting if you are the designated planter (e.g., first to the zone)
+            if (!gameRoomData.spike.planterId || gameRoomData.spike.planterId === userId) {
+                 await updateFirestoreState({
+                    spike: {
+                        ...gameRoomData.spike,
+                        planted: true,
+                        planterId: userId,
+                        location: { x: playerState.x, y: playerState.y },
+                        timer: SPIKE_TIMER_SECONDS,
+                    }
+                });
+                startSpikeTimer();
+            }
+         }
+    }
+    
+    /**
+     * Starts the spike detonation timer.
+     */
+    function startSpikeTimer() {
+        clearInterval(spikeTimerInterval);
+        spikeTimerInterval = setInterval(() => {
+            // Only the person who planted should update the timer to avoid conflicts
+            if (gameRoomData.spike.planterId === userId && gameRoomData.spike.planted) {
+                const newTimer = Math.max(0, gameRoomData.spike.timer - 1);
+                updateFirestoreState({
+                    spike: {
+                        ...gameRoomData.spike,
+                        timer: newTimer,
+                    }
+                });
+                if (newTimer <= 0) {
+                    clearInterval(spikeTimerInterval);
+                }
+            }
+        }, 1000);
+    }
+    
+    /**
+     * Defuses the spike.
+     */
+    async function defuseSpike() {
+        if (isInsideSpikeZone(playerState.x, playerState.y) && gameRoomData.spike.planted) {
+            // Defusing takes time, simulate with a simple check
+            const distance = Math.sqrt((playerState.x - gameRoomData.spike.location.x)**2 + (playerState.y - gameRoomData.spike.location.y)**2);
+            if(distance < TILE_SIZE * 2) {
+                // Check if anyone else is defusing
+                if(!gameRoomData.spike.defuserId || gameRoomData.spike.defuserId === userId) {
+                    await updateFirestoreState({ spike: { ...gameRoomData.spike, defuserId: userId, defusing: true } });
+                    
+                    // Simple defuse logic
+                    setTimeout(async () => {
+                        // Check if still defusing after time
+                        const currentSpike = (await getDoc(gameRoomRef)).data().spike;
+                        if(currentSpike.defusing && currentSpike.defuserId === userId) {
+                            endRound('Spike defused!');
+                        }
+                    }, 5000); // 5 seconds to defuse
+                }
+            }
+        }
+    }
+    
+    /**
+     * Ends the current round and shows the game over modal.
+     * @param {string} message The message to display in the modal.
+     */
+    function endRound(message) {
+        clearInterval(gameLoopInterval);
+        clearInterval(spikeTimerInterval);
+        gameOverModal.classList.add('active');
+        document.getElementById('game-over-title').textContent = message.includes('wins') ? message : 'Game Over!';
+        document.getElementById('game-over-text').textContent = message;
+    }
+    
+    /**
+     * Triggers the player's ability based on agent type.
+     */
+    async function useAbility() {
+        if (playerState.isDead) return;
+        const now = Date.now();
+        const agent = AGENTS[playerState.agent];
+        
+        if (now - playerState.ability.lastUsed > agent.abilityCooldown) {
+            playerState.ability.lastUsed = now;
+            
+            let newAbility = null;
+            switch (playerState.agent) {
+                case 'jett':
+                    // Jett's dash
+                    const dashDistance = 50;
+                    const dx = Math.cos(playerState.angle) * dashDistance;
+                    const dy = Math.sin(playerState.angle) * dashDistance;
+                    playerState.x += dx;
+                    playerState.y += dy;
+                    break;
+                case 'sova':
+                    // Sova's recon dart - simple animation
+                    newAbility = { type: 'recon', x: playerState.x, y: playerState.y, duration: 5000 };
+                    break;
+                case 'sage':
+                    // Sage's wall - a temporary barrier
+                    const wallLength = 100;
+                    newAbility = { type: 'wall', x: playerState.x, y: playerState.y, angle: playerState.angle, length: wallLength, duration: 10000 };
+                    break;
+            }
+            
+            if (newAbility) {
+                await updateFirestoreState({ abilities: [ ...gameRoomData.abilities, newAbility] });
+            }
+        }
+    }
+
+    /**
+     * Updates the position of local bullets and checks for collisions.
+     */
+    function updateBullets() {
+        const otherPlayers = Object.entries(gameRoomData.players).filter(([id]) => id !== userId);
+        const newBullets = [];
+        
+        for (const bullet of playerState.bullets) {
+            bullet.x += Math.cos(bullet.angle) * BULLET_SPEED;
+            bullet.y += Math.sin(bullet.angle) * BULLET_SPEED;
+            
+            let hit = false;
+            // Check for collision with other players
+            for (const [id, p] of otherPlayers) {
+                const distance = Math.sqrt((bullet.x - p.x)**2 + (bullet.y - p.y)**2);
+                if (distance < 20) {
+                    hit = true;
+                    // Send a 'hit' event to the server to update the other player's HP
+                    updateFirestoreState({
+                        players: {
+                            [id]: {
+                                ...p,
+                                hp: Math.max(0, p.hp - 20), // 20 damage per hit
+                                isDead: p.hp - 20 <= 0,
+                            }
+                        }
+                    });
+                    break;
+                }
+            }
+            
+            // If it hasn't hit and is still on screen, keep it
+            if (!hit && bullet.x > 0 && bullet.x < mapWidth && bullet.y > 0 && bullet.y < mapHeight) {
+                newBullets.push(bullet);
+            }
+        }
+        playerState.bullets = newBullets;
+    }
+    
+    /**
+     * Updates local player position based on network state.
+     */
+    function updatePlayerPosition() {
+        const serverPlayer = gameRoomData.players[userId];
+        if (serverPlayer) {
+            playerState.hp = serverPlayer.hp;
+            playerState.isDead = serverPlayer.isDead;
+        }
+    }
+    
+    /**
+     * Updates the abilities and their animations.
+     */
+    function updateAbilities() {
+        gameRoomData.abilities = gameRoomData.abilities.filter(ability => {
+             // Simple expiration logic
+             if (ability.type === 'recon') {
+                 if (Date.now() - ability.startTime > ability.duration) {
+                     return false;
+                 }
+             }
+             return true;
+        });
+    }
+
+    /**
+     * Main rendering function.
+     */
+    function renderGame() {
+        if (!gameRoomData) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw the map
+        for (let row = 0; row < map.length; row++) {
+            for (let col = 0; col < map[row].length; col++) {
+                const tile = map[row][col];
+                if (tile === 0) {
+                    ctx.fillStyle = '#2b3547'; // Wall color
+                    ctx.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                } else if (tile === 2) {
+                    ctx.fillStyle = 'rgba(255, 70, 85, 0.2)'; // Spike zone
+                    ctx.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+                }
+            }
+        }
+        
+        // Draw all players
+        for (const pId in gameRoomData.players) {
+            const p = gameRoomData.players[pId];
+            if (!p.isDead) {
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                
+                // Draw player circle
+                ctx.fillStyle = AGENTS[p.agent].color;
+                ctx.beginPath();
+                ctx.arc(0, 0, 15, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw gun
+                const gunX = Math.cos(p.angle) * 15;
+                const gunY = Math.sin(p.angle) * 15;
+                ctx.fillStyle = '#64748b';
+                ctx.fillRect(gunX, gunY, 20, 5);
+
+                // Draw username
+                ctx.fillStyle = '#ffffff';
+                ctx.textAlign = 'center';
+                ctx.fillText(p.agent, 0, -25);
+                ctx.restore();
+            }
+        }
+        
+        // Draw all bullets
+        gameRoomData.bullets.forEach(bullet => {
+            ctx.fillStyle = '#a0aec0';
+            ctx.beginPath();
+            ctx.arc(bullet.x, bullet.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        
+        // Draw the spike
+        if (gameRoomData.spike.planted) {
+            const s = gameRoomData.spike;
+            ctx.fillStyle = '#ff4655';
+            ctx.beginPath();
+            ctx.arc(s.location.x, s.location.y, 10, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw detonation timer
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.fillText(Math.ceil(s.timer), s.location.x, s.location.y - 20);
+        }
+        
+        // Draw abilities
+        gameRoomData.abilities.forEach(ability => {
+            if (ability.type === 'recon') {
+                ctx.fillStyle = 'rgba(0, 128, 128, 0.5)';
+                ctx.beginPath();
+                ctx.arc(ability.x, ability.y, 50, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (ability.type === 'wall') {
+                ctx.save();
+                ctx.translate(ability.x, ability.y);
+                ctx.rotate(ability.angle);
+                ctx.fillStyle = AGENTS['sage'].color;
+                ctx.fillRect(0, -5, ability.length, 10);
+                ctx.restore();
+            }
+        });
+    }
+
+    /**
+     * Updates the UI elements based on the game state.
+     */
+    function updateUI() {
+        if (!gameRoomData) return;
+
+        // Update player list
+        playerListEl.innerHTML = '';
+        for (const pId in gameRoomData.players) {
+            const p = gameRoomData.players[pId];
+            const isMe = pId === userId;
+            const hpColor = p.hp > 50 ? 'text-green-400' : p.hp > 20 ? 'text-yellow-400' : 'text-red-400';
+            const status = p.isDead ? 'DEAD' : 'ALIVE';
+            playerListEl.innerHTML += `
+                <div class="player-card">
+                    <p class="font-bold">${p.agent} <span class="text-sm text-gray-400">${isMe ? '(You)' : ''}</span></p>
+                    <p class="${hpColor} text-sm">HP: ${p.hp}</p>
+                    <p class="text-xs text-gray-500">${status}</p>
+                </div>
+            `;
+        }
+        
+        // Update chat
+        chatMessagesEl.innerHTML = '';
+        gameRoomData.chat.slice(-10).forEach(msg => {
+            const chatLine = document.createElement('p');
+            chatLine.innerHTML = `<span class="font-bold text-sm text-[#ff4655]">${msg.agent}:</span> ${msg.text}`;
+            chatMessagesEl.appendChild(chatLine);
+        });
+        chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+
+        // Update round timer
+        const timeElapsed = Date.now() - gameRoomData.roundStartTime;
+        const totalRoundTime = 1000 * 60 * 2; // 2 minutes per round
+        const timeLeft = Math.max(0, totalRoundTime - timeElapsed);
+        const minutes = Math.floor(timeLeft / (1000 * 60));
+        const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
+        roundTimerEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        
+        if (timeLeft <= 0 && !gameRoomData.spike.planted) {
+            endRound('Round time expired! Defenders win!');
+        }
+
+        // Update spike status
+        if (gameRoomData.spike.planted) {
+            spikeStatusEl.textContent = `Planted (${Math.ceil(gameRoomData.spike.timer)})`;
+            spikeStatusEl.style.color = '#ff4655';
+        } else {
+            spikeStatusEl.textContent = 'Not Planted';
+            spikeStatusEl.style.color = '#ffffff';
+        }
+    }
+
+    // --- Helper Functions ---
+
+    /**
+     * Checks if a position is inside a wall.
+     */
+    function isCollidingWithWall(x, y) {
+        const col = Math.floor(x / TILE_SIZE);
+        const row = Math.floor(y / TILE_SIZE);
+        if (row < 0 || row >= map.length || col < 0 || col >= map[0].length) {
+            return true;
+        }
+        return map[row][col] === 0;
+    }
+    
+    /**
+     * Checks if a position is inside the spike zone.
+     */
+    function isInsideSpikeZone(x, y) {
+        const col = Math.floor(x / TILE_SIZE);
+        const row = Math.floor(y / TILE_SIZE);
+        if (row < 0 || row >= map.length || col < 0 || col >= map[0].length) {
+            return false;
+        }
+        return map[row][col] === 2;
+    }
+
+    // --- Event Listeners ---
+
+    agentSelectDiv.addEventListener('click', (e) => {
+        const card = e.target.closest('.agent-card');
+        if (card) {
+            document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            playerState.agent = card.dataset.agent;
+            joinGameButton.disabled = false;
+        }
+    });
+
+    joinGameButton.addEventListener('click', joinOrCreateGame);
+    startNewRoundButton.addEventListener('click', resetGame);
+    plantButton.addEventListener('click', plantSpike);
+    defuseButton.addEventListener('click', defuseSpike);
+    abilityButton.addEventListener('click', useAbility);
+
+    chatInputEl.addEventListener('keydown', async (e) => {
+        if (e.key === 'Enter' && chatInputEl.value.trim() !== '') {
+            const message = chatInputEl.value.trim();
+            const playerAgent = gameRoomData.players[userId]?.agent || 'Unknown';
+            const newChat = [...(gameRoomData.chat || []), { agent: playerAgent, text: message }];
+            await updateFirestoreState({ chat: newChat });
+            chatInputEl.value = '';
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        keys[e.key.toLowerCase()] = true;
+    });
+
+    document.addEventListener('keyup', (e) => {
+        keys[e.key.toLowerCase()] = false;
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        mouse.x = e.clientX;
+        mouse.y = e.clientY;
+        const dx = (e.clientX - rect.left) - playerState.x;
+        const dy = (e.clientY - rect.top) - playerState.y;
+        playerState.angle = Math.atan2(dy, dx);
+    });
+
+    canvas.addEventListener('mousedown', () => mouse.clicked = true);
+    canvas.addEventListener('mouseup', () => mouse.clicked = false);
+
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        mouse.x = touch.clientX;
+        mouse.y = touch.clientY;
+        mouse.clicked = true;
+        
+        const dx = (touch.clientX - rect.left) - playerState.x;
+        const dy = (touch.clientY - rect.top) - playerState.y;
+        playerState.angle = Math.atan2(dy, dx);
+    }, { passive: false });
+    
+    canvas.addEventListener('touchend', () => mouse.clicked = false);
+    canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const rect = canvas.getBoundingClientRect();
+        mouse.x = touch.clientX;
+        mouse.y = touch.clientY;
+        const dx = (touch.clientX - rect.left) - playerState.x;
+        const dy = (touch.clientY - rect.top) - playerState.y;
+        playerState.angle = Math.atan2(dy, dx);
+    }, { passive: false });
+
+    // --- Game Entry Point ---
+    window.onload = function() {
+        if (window.innerWidth >= 768) {
+            canvas.width = mapWidth;
+            canvas.height = mapHeight;
+        } else {
+            const size = Math.min(window.innerWidth * 0.9, window.innerHeight * 0.7);
+            canvas.width = size;
+            canvas.height = size;
+            // The map will be scaled, so we need to adjust logic
+        }
+        initFirebase();
+    };
+</script>
+</body>
+</html>
